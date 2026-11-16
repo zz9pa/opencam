@@ -94,7 +94,10 @@ export interface RoughParams extends Mill3Common {
   /** Stock left on the surface for the finishing pass, mm */
   leave: number;
 }
-export type FinishParams = Mill3Common;
+export interface FinishParams extends Mill3Common {
+  /** Finish a second time along Y as well as X, so surfaces that run along the first passes (steep walls) are cut cleanly too */
+  cross?: boolean;
+}
 
 export interface Mill3Result { toolpath: Toolpath; warnings: string[]; stats: { cells: number; cell: number; rows: number; unreachable: number } }
 
@@ -246,8 +249,30 @@ export function simplify3(pts: Pt3[], tol: number): Pt3[] {
   return pts.filter((_, i) => keep[i]);
 }
 
-/** Finishing: passes along X (stepping in Y) with the bit tip following the tool surface. */
+/** The model with X and Y swapped (a mirror about the diagonal: nothing else changes). */
+function transpose(m: Oriented): Oriented {
+  const tri = new Float32Array(m.tri.length);
+  for (let i = 0; i < tri.length; i += 3) { tri[i] = m.tri[i + 1]; tri[i + 1] = m.tri[i]; tri[i + 2] = m.tri[i + 2]; }
+  return { tri, w: m.d, d: m.w, h: m.h };
+}
+const swapXY = (c: Cut): Cut => ({ ...c, loop: c.loop.map(q => ({ x: q.y, y: q.x })), moves: c.moves.map(m => ({ ...m, x: m.y, y: m.x })) });
+
+/**
+ * Finishing: passes along X (stepping in Y) with the bit tip following the tool surface. With `cross`, a second set of
+ * passes along Y follows (the model is turned about the diagonal, finished the same way and turned back). A mirror keeps
+ * climb as climb: the uncut side is still on the right of travel.
+ */
 export function finish3d(model: Oriented, p: FinishParams, tol = 0.01): Mill3Result {
+  const first = finishOnce(model, p, tol);
+  if (!p.cross || !first.toolpath.cuts.length) return first;
+  const second = finishOnce(transpose(model), { ...p, at: { x: p.at.y, y: p.at.x } }, tol);
+  first.toolpath.cuts.push(...second.toolpath.cuts.map(swapXY));
+  first.stats.rows += second.stats.rows;
+  first.warnings = [...new Set([...first.warnings, ...second.warnings])];
+  return first;
+}
+
+function finishOnce(model: Oriented, p: FinishParams, tol: number): Mill3Result {
   const warnings: string[] = [];
   const rs0 = Math.max(1, Math.round(p.stepover / 0.35));
   const hm = heightMap(model, p.stepover / rs0);

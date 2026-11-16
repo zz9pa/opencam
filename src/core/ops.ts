@@ -1,6 +1,6 @@
-import type { Cut, Direction, Line, Loop, Material, Pt, Tool, Toolpath } from './types';
-import { normalize, offset, reverse, signedArea, simplify, simplifyOpen } from './geometry';
-import { buildMoves, buildOpenMoves, type RampParams, type TabParams } from './entry';
+import type { Cut, Direction, Line, Loop, Material, Pt, Pt3, Tool, Toolpath } from './types';
+import { insideRegion, normalize, offset, reverse, signedArea, simplify, simplifyOpen } from './geometry';
+import { buildMoves, buildOpenMoves, leadMoves, type RampParams, type TabParams } from './entry';
 import { radiusAt } from './tool';
 
 export interface CutParams {
@@ -43,6 +43,12 @@ export interface ProfileParams extends CutParams {
   tabs?: TabParams;
   /** Inside cut-outs only: relieve inside corners so square-cornered parts fit */
   dogbone?: boolean;
+  /**
+   * Radius of the lead-in / lead-out arcs, mm (0 or unset = none). The first depth arrives along a curve that does the descent and
+   * the last leaves along one, both bending into the waste, so there is no plunge mark on the finished edge. Arcs that do not fit
+   * (small holes, tight gaps) are made smaller, then dropped.
+   */
+  lead?: number;
 }
 
 /**
@@ -57,20 +63,30 @@ export function profile(shapes: Loop[], side: ProfileSide, p: ProfileParams): To
   let zStart = -(p.start ?? 0);
   // Inside cut-out: the removed region is the shape itself (interior on the left of every edge after normalisation).
   const corners = p.dogbone && side === 'inside' ? insideCorners(norm) : [];
-  for (const z of depthLevels(p.depth, p.material.stepdown, p.start)) {
+  const levels = depthLevels(p.depth, p.material.stepdown, p.start);
+  levels.forEach((z, li) => {
     const r = radiusAt(p.tool, z);
-    for (const raw of offset(norm, side === 'outside' ? r : -r)) {
+    const rings = offset(norm, side === 'outside' ? r : -r);
+    for (const raw of rings) {
       const l = corners.length ? addDogbones(raw, corners, r) : raw;
       const isOuter = signedArea(raw) > 0; // Clipper: outers +, holes -
       const toolOutside = side === 'outside' ? isOuter : !isOuter;
       const loop = orient(l, toolOutside !== climb);
+      const lead = { in: li === 0, out: li === levels.length - 1 };
+      let moves: Pt3[] | null = null;
+      if (p.lead && p.lead > 0) {
+        // the arcs must stay on the waste side of the finished edge: outside the ring for an outside cut, inside it for an inside cut
+        const clear = (q: Pt) => (side === 'outside' ? !insideRegion(rings, q.x, q.y) : insideRegion(rings, q.x, q.y));
+        const body = lead.in ? buildMoves(loop, z, z, 2 * r, { tabs: p.tabs, tabTopZ }) : buildMoves(loop, zStart, z, 2 * r, { ramp: p.ramp, tabs: p.tabs, tabTopZ });
+        moves = leadMoves(body, zStart, z, p.lead, climb, lead, clear);
+      }
       cuts.push({
         loop, z, zStart, closed: true, ...airTo(p.start, zStart),
-        moves: buildMoves(loop, zStart, z, 2 * r, { ramp: p.ramp, tabs: p.tabs, tabTopZ }),
+        moves: moves ?? buildMoves(loop, zStart, z, 2 * r, { ramp: p.ramp, tabs: p.tabs, tabTopZ }),
       });
     }
     zStart = z;
-  }
+  });
   return { name: `Profile (${side})`, tool: p.tool, cuts, feed: p.material.feed, plungeFeed: p.material.plungeFeed };
 }
 

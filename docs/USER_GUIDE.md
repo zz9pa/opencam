@@ -246,6 +246,12 @@ An **inlay** is a recess cut in one board with a matching insert cut from anothe
 - Use the same V-bit for the recess and the insert, and set Z zero carefully on both boards: any error changes how tightly the insert fits.
 - Practise on scrap: wedge-fit inlays are sensitive to bit angle, so check your bit really is the angle printed on it.
 
+### Flat-bottom inlay
+
+Choose **Inlay, flat bottom** for a recess with a flat floor and straight walls, cut with an ordinary flat bit. The program pockets the recess to the depth you set, **pauses so you can swap in the insert board**, then cuts the same shape out of it (face up, not mirrored). The insert comes out 0.1 mm smaller all round so it goes in without force. The insert board must be as thick as the recess depth plus **Insert proud by**, so the insert stands that far above the surface and can be sanded flush. Three small tabs keep the insert in its board: cut them with a knife.
+
+A round bit cannot make a sharp inside corner in a pocket or a sharp outside corner on a cut-out, so both pieces are cut with every corner rounded to the bit radius. They match each other, but the design loses sharp corners. A smaller bit rounds less. Detail narrower than the bit is lost, and the program tells you how much.
+
 ## 3D milling
 
 Open the **3D model (STL)** panel and load an STL file. The program carves the **top surface** of the model: a flat bit removes the bulk of the material (roughing), then a ball nose bit follows the surface to leave a smooth finish. Anything hidden under an overhang cannot be reached from above, so it is ignored.
@@ -256,7 +262,8 @@ Open the **3D model (STL)** panel and load an STL file. The program carves the *
 4. **Stock left by roughing** is the thin layer the roughing pass leaves for the finishing pass to remove.
 5. **Step-over** is how far apart the passes are, as a percentage of the bit diameter. Smaller finishing step-overs give a smoother surface and a longer run.
 6. **Back-and-forth passes** make the job faster by joining passes, but every second pass then cuts in the other direction. Leave it off to keep every pass in the direction you chose under Cut direction.
-7. **Add the model's outline to the drawing** puts the outline of the model in the drawing, so you can add an ordinary cut-out around it.
+7. **Finish in both directions** adds a second set of finishing passes that run across the first. A single set of passes leaves steep walls that run along them rougher than the rest; the crossing set cuts those cleanly. It doubles the finishing time.
+8. **Add the model's outline to the drawing** puts the outline of the model in the drawing, so you can add an ordinary cut-out around it.
 
 The warnings list tells you when part of the surface is too fine for the chosen bit (tight inside curves and narrow grooves). A smaller bit cuts closer there.
 
@@ -333,6 +340,7 @@ open-cam works out the correct travel direction around every outline, hole and i
 - **Depth**: total depth from the top surface. To cut right through a board, use the board's thickness. A fraction of a millimetre more makes sure it cuts all the way through (it will mark your spoilboard).
 - **Ramp into the cut**: enter the material gradually. Recommended, and gentler on the bit and machine.
 - **Speed when going down**: a straight plunge uses the slower *plunge* speed. A gentle ramp (under about 6&deg;) is really a cutting move, so it runs at the normal cutting speed, and in between the speed blends. Steeper moves are slower.
+- **Lead-in and lead-out** (cut-outs only): the bit arrives at the edge along a curve and leaves along another, both bending away from the finished edge into the waste. Plunging straight onto the edge, or stopping on it, can leave a small mark; this avoids it. The first depth uses the curve to go down gradually, the last depth leaves along it, and depths in between follow the cut already made. Where there is no room for the curve (a small hole, a narrow gap) it is made smaller, or left out.
 - **Holding tabs** (cut-outs only): leave small bridges so the part stays attached.
   - *Tabs*: how many, evenly spaced.
   - *Width*: how wide each bridge is.
@@ -493,7 +501,7 @@ open-cam shows the windows on the preview (dashed vertical lines) and the pins (
 
 ## Limits
 
-- Cuts flat shapes (2D and 2.5D). Cutting sculpted 3D surfaces is planned, not built yet.
+- Cuts flat shapes (2D and 2.5D) and the top surface of a 3D model. It cannot cut undercuts, and finishing does not yet clear leftover material in tight corners with a smaller bit (rest machining).
 - Input is SVG or ASCII DXF (binary DXF, DWG and other formats should be saved as DXF or SVG first). Images, hatches and 3D objects are not read. Text uses our built-in fonts, not yours.
 - Curves are written as short straight lines unless you switch on arcs (which needs controller support).
 - Feeds and speeds are cautious starting points, not guarantees. Machines differ.

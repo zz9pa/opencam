@@ -40,6 +40,7 @@ export const HINTS: Record<string, string> = {
   start: 'Where cutting begins, measured down from the top of the material. Use it for holes inside a pocket so the bit does not cut air above the pocket floor.',
   dir: 'Climb gives cleaner edges. Conventional pushes the bit less, which can suit a light machine.',
   ramp: 'Go down gradually along the path instead of plunging straight in.',
+  lead: 'The bit arrives and leaves along a curve that bends away from the finished edge, so it does not leave a mark where it plunges or stops. The curve is made smaller (or left out) where there is no room.',
   tabs: 'Leave small bridges so a cut-out part stays attached until you finish.',
   tabn: 'How many tabs, spaced evenly. Very small shapes get fewer.',
   tabw: 'Width of each tab, in mm.',

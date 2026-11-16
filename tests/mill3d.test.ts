@@ -251,3 +251,30 @@ describe('3D passes in a split job', () => {
     }
   });
 });
+
+describe('finishing in both directions', () => {
+  // a ridge along X: a steep wall that runs parallel to the X passes
+  const wall = () => orient(field((x, y) => (y > 0 ? 0 : -8), -10, 10, -10, 10, 0.5), DEFAULT_ORIENT);
+  const run = (cross: boolean) => finish3d(wall(), { tool: ball3, material: mat, direction: 'climb', zigzag: false, top: 0, at: { x: 0, y: 0 }, stepover: 1, cross });
+  it('adds a second set of passes that run along Y', () => {
+    const one = run(false), two = run(true);
+    const alongY = (tp: typeof one.toolpath) => tp.cuts.filter(c => { const xs = c.moves.map(m => m.x), ys = c.moves.map(m => m.y); return Math.max(...ys) - Math.min(...ys) > 5 * (Math.max(...xs) - Math.min(...xs) + 0.01); }).length;
+    expect(alongY(one.toolpath)).toBe(0);
+    expect(alongY(two.toolpath)).toBeGreaterThan(5);
+    expect(two.toolpath.cuts.length).toBeGreaterThan(one.toolpath.cuts.length);
+  });
+  it('the Y passes sit at the same heights over the same points', () => {
+    const two = run(true);
+    const pts = two.toolpath.cuts.flatMap(c => c.moves);
+    for (const q of pts) expect(q.z).toBeLessThanOrEqual(0.0001);
+    // wall edge: low side of the wall (y<=0) is cut deep, high side shallow, in both sets
+    expect(pts.some(q => q.y < 7 && q.z < -7)).toBe(true);
+  });
+  it('climb stays climb: the Y passes run towards -Y while stepping +X', () => {
+    const two = run(true);
+    const ycuts = two.toolpath.cuts.filter(c => { const xs = c.moves.map(m => m.x), ys = c.moves.map(m => m.y); return Math.max(...ys) - Math.min(...ys) > 5 * (Math.max(...xs) - Math.min(...xs) + 0.01); });
+    const first = ycuts[0].moves, last = ycuts[ycuts.length - 1].moves;
+    expect(first[first.length - 1].y).toBeLessThan(first[0].y);
+    expect(last[0].x).toBeGreaterThan(first[0].x);
+  });
+});

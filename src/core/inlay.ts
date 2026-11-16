@@ -3,7 +3,7 @@ import type { Cut, Direction, Loop, Material, Tool, Toolpath } from './types';
 import { normalize, offset, reverse, signedArea } from './geometry';
 import type { RampParams } from './entry';
 import { linkRings } from './ringlink';
-import { depthLevels, profile } from './ops';
+import { depthLevels, pocket, profile } from './ops';
 import { maxVDepth, surfaceRadius, vcarve } from './vcarve';
 
 /**
@@ -113,4 +113,58 @@ export function inlay(shapes: Loop[], p: InlayParams): InlayResult {
     toolpath: { name: 'Inlay: recess then insert', tool: p.tool, cuts, feed: p.material.feed, plungeFeed: p.material.plungeFeed, meta: { recessDepth: P, insertDepth: Pm, inset: delta } },
     blank, warnings, mirrorX,
   };
+}
+
+/** How much smaller than the recess the insert is cut, so it goes in without force and leaves a hairline for glue, mm */
+export const FLAT_FIT = 0.1;
+
+export interface FlatInlayParams {
+  /** A flat (or ball) bit */
+  tool: Tool;
+  material: Material;
+  /** Recess depth, mm */
+  depth: number;
+  /** How far the insert stands above the surface when pressed home (the insert board is depth + proud thick), mm */
+  proud: number;
+  direction: Direction;
+  ramp?: RampParams;
+}
+
+/**
+ * Flat-bottom inlay: a pocket in the base board, then the same shape cut out of the insert board (face up, not mirrored).
+ * A round bit rounds every convex corner of a pocket and every concave corner of a cut-out, so both pieces are cut to the
+ * same shape: the design with convex corners rounded by the bit radius and concave corners filled to it (an opening then a
+ * closing). The insert is FLAT_FIT smaller all round. Holding tabs keep the insert in its board.
+ */
+export function inlayFlat(shapes: Loop[], p: FlatInlayParams): { toolpath: Toolpath; warnings: string[] } {
+  const warnings: string[] = [];
+  const base = { name: 'Flat inlay: recess then insert', tool: p.tool, feed: p.material.feed, plungeFeed: p.material.plungeFeed };
+  const region = normalize(shapes);
+  const r = p.tool.diameter / 2;
+  if (!region.length || !(p.depth > 0)) return { toolpath: { ...base, cuts: [] }, warnings };
+  const filled = offset(offset(region, r), -r);                  // closing: the bit cannot reach into tight concave corners
+  const shape = offset(offset(filled, -r), r);                   // opening: nor into the point of a convex corner
+  if (!shape.length) {
+    warnings.push(`Every part of the design is narrower than the ${p.tool.diameter} mm bit, so nothing can be cut. Use a smaller bit.`);
+    return { toolpath: { ...base, cuts: [] }, warnings };
+  }
+  const lost = 1 - Math.abs(area(shape)) / Math.max(1e-9, Math.abs(area(region)));
+  if (lost > 0.02) warnings.push(`Fine detail narrower than the ${p.tool.diameter} mm bit is lost (about ${(lost * 100).toFixed(0)}% of the area), and every sharp corner is rounded to the bit radius on the recess and on the insert. A smaller bit keeps more.`);
+  else warnings.push(`Corners are rounded to the ${p.tool.diameter} mm bit radius on the recess and on the insert, so they fit each other.`);
+
+  const common = { tool: p.tool, material: p.material, direction: p.direction, ramp: p.ramp };
+  const recess = pocket(shape, { ...common, depth: p.depth, stepoverFraction: 0.4 });
+  const cuts: Cut[] = recess.cuts.map(c => ({ ...c, tag: 'female' }));
+
+  const insertDepth = p.depth + Math.max(0, p.proud);
+  const insertShape = offset(shape, -FLAT_FIT);
+  if (insertShape.length) {
+    const cut = profile(insertShape, 'outside', { ...common, depth: insertDepth, tabs: { count: 3, width: 4, height: Math.min(1.5, insertDepth / 2) } });
+    const male: Cut[] = cut.cuts.map(c => ({ ...c, tag: 'male' }));
+    if (male.length) male[0].pauseBefore = `SWAP THE BOARD: the recess is finished.
+Put the INSERT board on the machine in the same position, face up, and set Z zero on its top surface.
+It must be ${+insertDepth.toFixed(2)} mm thick (recess ${p.depth} mm + ${p.proud} mm proud).`;
+    cuts.push(...male);
+  }
+  return { toolpath: { ...base, cuts, meta: { recessDepth: p.depth, insertDepth } }, warnings };
 }

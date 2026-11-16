@@ -17,7 +17,7 @@ import { createGrid, simulateToolpath, autoStock, simSummary, type Stock } from 
 import { planEntries } from './core/gcode';
 import { Viewer } from './sim3d';
 import { vcarve, vcarveWithFlat } from './core/vcarve';
-import { inlay } from './core/inlay';
+import { inlay, inlayFlat } from './core/inlay';
 import { zeroOffset, stockOffset } from './core/place';
 import { parseStl, orient, turnOver, heightMap, EMPTY, StlError, type Mesh, type Oriented, type Up } from './core/mesh';
 import { rough3d, finish3d } from './core/mill3d';
@@ -33,20 +33,20 @@ import {
 } from './core/twosided';
 import type { Direction, Loop, Pt, Tool, ToolType, Toolpath } from './core/types';
 
-type Kind = 'outside' | 'inside' | 'on' | 'drill' | 'pocket' | 'vcarve' | 'inlay' | 'rough3d' | 'finish3d';
+type Kind = 'outside' | 'inside' | 'on' | 'drill' | 'pocket' | 'vcarve' | 'inlay' | 'inlayflat' | 'rough3d' | 'finish3d';
 const KIND_NAME: Record<Kind, string> = {
-  outside: 'Cut out (outside)', inside: 'Cut out (inside)', on: 'On the line', drill: 'Drill holes', pocket: 'Pocket', vcarve: 'V-carve', inlay: 'Inlay (recess + insert)',
+  outside: 'Cut out (outside)', inside: 'Cut out (inside)', on: 'On the line', drill: 'Drill holes', pocket: 'Pocket', vcarve: 'V-carve', inlay: 'Inlay (recess + insert)', inlayflat: 'Inlay, flat bottom',
   rough3d: '3D roughing', finish3d: '3D finishing',
 };
 const is3d = (k: Kind) => k === 'rough3d' || k === 'finish3d';
 
 /** 3D model placement and step settings (the model itself and its orientation are shared by all 3D operations). */
-interface M3 { x: number; y: number; top: number; stepR: number; stepF: number; leave: number; zig: boolean }
+interface M3 { x: number; y: number; top: number; stepR: number; stepF: number; leave: number; zig: boolean; cross?: boolean }
 
 interface Settings {
   m3: M3;
   kind: Kind; ttype: ToolType; diameter: number; angle: number; tip: number; depth: number; start: number;
-  dir: Direction; ramp: boolean; tabs: boolean; tabn: number; tabw: number; tabh: number;
+  dir: Direction; ramp: boolean; tabs: boolean; lead: boolean; tabn: number; tabw: number; tabh: number;
   flute: number;
   /** V-carve: what to do where a shape is wider than the bit can reach at the maximum depth */
   wide: 'clear' | 'skip' | 'flat';
@@ -160,21 +160,21 @@ function readForm(): Settings {
     kind: sel('op').value as Kind, ttype: sel('ttype').value as ToolType,
     diameter: +inp('tool').value, angle: +inp('vangle').value, tip: +inp('vtip').value,
     depth: +inp('depth').value, start: +inp('start').value || 0, dir: sel('dir').value as Direction, ramp: inp('ramp').checked,
-    tabs: inp('tabs').checked, tabn: +inp('tabn').value, tabw: +inp('tabw').value, tabh: +inp('tabh').value,
+    tabs: inp('tabs').checked, lead: inp('lead').checked, tabn: +inp('tabn').value, tabw: +inp('tabw').value, tabh: +inp('tabh').value,
     flute: +inp('flute').value, wide: sel('vwide').value as 'clear' | 'skip' | 'flat', vflat: +inp('vflat').value, glue: +inp('iglue').value, moat: +inp('imoat').value, dogbone: inp('dogbone').checked,
     side: sel('side').value as 'front' | 'back', frame: sel('frame').value as 'front' | 'back',
-    m3: { x: +inp('stlx').value || 0, y: +inp('stly').value || 0, top: +inp('stltop').value || 0, stepR: +inp('stlsr').value, stepF: +inp('stlsf').value, leave: +inp('stlleave').value || 0, zig: inp('stlzig').checked },
+    m3: { x: +inp('stlx').value || 0, y: +inp('stly').value || 0, top: +inp('stltop').value || 0, stepR: +inp('stlsr').value, stepF: +inp('stlsf').value, leave: +inp('stlleave').value || 0, zig: inp('stlzig').checked, cross: inp('stlcross').checked },
   };
 }
 function writeForm(s: Settings) {
   if (!is3d(s.kind)) sel('op').value = s.kind;
   if (s.m3) {
     inp('stlx').value = String(s.m3.x); inp('stly').value = String(s.m3.y); inp('stltop').value = String(s.m3.top);
-    inp('stlsr').value = String(s.m3.stepR); inp('stlsf').value = String(s.m3.stepF); inp('stlleave').value = String(s.m3.leave); inp('stlzig').checked = s.m3.zig;
+    inp('stlsr').value = String(s.m3.stepR); inp('stlsf').value = String(s.m3.stepF); inp('stlleave').value = String(s.m3.leave); inp('stlzig').checked = s.m3.zig; inp('stlcross').checked = !!s.m3.cross;
   }
   sel('ttype').value = s.ttype; inp('tool').value = String(s.diameter);
   inp('vangle').value = String(s.angle); inp('vtip').value = String(s.tip); inp('depth').value = String(s.depth); inp('start').value = String(s.start ?? 0);
-  sel('dir').value = s.dir; inp('ramp').checked = s.ramp; inp('tabs').checked = s.tabs;
+  sel('dir').value = s.dir; inp('ramp').checked = s.ramp; inp('tabs').checked = s.tabs; inp('lead').checked = !!s.lead;
   inp('tabn').value = String(s.tabn); inp('tabw').value = String(s.tabw); inp('tabh').value = String(s.tabh);
   inp('flute').value = String(s.flute); sel('vwide').value = s.wide; inp('vflat').value = String(s.vflat); inp('iglue').value = String(s.glue); inp('imoat').value = String(s.moat); inp('dogbone').checked = s.dogbone;
   sel('side').value = s.side; sel('frame').value = s.frame;
@@ -184,9 +184,12 @@ function syncVisibility() {
   $('vrow').classList.toggle('hidden', sel('ttype').value !== 'vbit');
   $('tabbox').classList.toggle('hidden', !['outside', 'inside'].includes(sel('op').value));
   $('vcarverow').classList.toggle('hidden', sel('op').value !== 'vcarve');
-  $('inlayrow').classList.toggle('hidden', sel('op').value !== 'inlay');
+  const inl = ['inlay', 'inlayflat'].includes(sel('op').value), flatInl = sel('op').value === 'inlayflat';
+  $('inlayrow').classList.toggle('hidden', !inl);
+  $('flatinlaynote').classList.toggle('hidden', !flatInl); $('vinlaynote').classList.toggle('hidden', flatInl); $('moatlbl').classList.toggle('hidden', flatInl);
+  $('gluelbl').textContent = flatInl ? 'Insert proud by (mm)' : 'Glue gap (mm)';
   $('vflatrow').classList.toggle('hidden', !(sel('op').value === 'vcarve' && sel('vwide').value === 'flat'));
-  $('startrow').classList.toggle('hidden', ['vcarve', 'inlay'].includes(sel('op').value));
+  $('startrow').classList.toggle('hidden', ['vcarve', 'inlay', 'inlayflat'].includes(sel('op').value));
   $('dogrow').classList.toggle('hidden', !['pocket', 'inside'].includes(sel('op').value));
   const on = ts().on;
   const sp = ts().split;
@@ -228,7 +231,7 @@ function compile3d(op: Op, tool: Tool, material: ReturnType<typeof currentMateri
   }
   msgs.push(...toolWarnings(tool, mdl.h + top, 'pocket'));
   const common = { tool, material, direction: s.dir, zigzag: m3.zig, top, at, stepover: s.diameter * step / 100 };
-  const r = s.kind === 'rough3d' ? rough3d(mdl, { ...common, stepdown: material.stepdown, leave: m3.leave }) : finish3d(mdl, common);
+  const r = s.kind === 'rough3d' ? rough3d(mdl, { ...common, stepdown: material.stepdown, leave: m3.leave }) : finish3d(mdl, { ...common, cross: !!m3.cross });
   op.tp = r.toolpath;
   if (back) op.tp.name = `SIDE 2: ${op.tp.name}`;
   msgs.push(...r.warnings);
@@ -283,7 +286,7 @@ function compile(op: Op) {
   if (s.ttype === 'vbit') { tool.angle = s.angle; tool.tipDiameter = s.tip; }
   const material = currentMaterial();
   if (inp('matcustom').checked) msgs.push(...materialWarnings(material, s.diameter));
-  const params = { tool, material, depth: s.depth, start: ['vcarve', 'inlay'].includes(s.kind) ? 0 : (s.start ?? 0), direction: s.dir, ramp: s.ramp ? { maxAngleDeg: 3 } : undefined };
+  const params = { tool, material, depth: s.depth, start: ['vcarve', 'inlay', 'inlayflat'].includes(s.kind) ? 0 : (s.start ?? 0), direction: s.dir, ramp: s.ramp ? { maxAngleDeg: 3 } : undefined };
   if (is3d(s.kind)) { compile3d(op, tool, material, msgs); return; }
   if (!(s.diameter > 0) || !(s.depth > 0)) { op.msgs = ['Enter a bit diameter and depth.']; return; }
   if (params.start >= s.depth - 1e-9) { op.msgs = [`The start depth (${params.start} mm) must be less than the depth (${s.depth} mm): there is nothing to cut.`]; return; }
@@ -306,6 +309,12 @@ function compile(op: Op) {
       msgs.push(...plan.warnings);
       op.info = plan.info;
       op.tp = { name: '', tool, cuts: plan.cuts, feed: material.feed, plungeFeed: material.plungeFeed };
+    } else if (s.kind === 'inlayflat') {
+      op.blank = undefined;
+      if (s.ttype === 'vbit') { op.msgs = [...msgs, 'Flat-bottom inlay needs a flat bit.']; return; }
+      const r = inlayFlat(closed, { tool, material, depth: s.depth, proud: s.glue, direction: s.dir, ramp: s.ramp ? { maxAngleDeg: 3 } : undefined });
+      op.tp = r.toolpath;
+      msgs.push(...r.warnings);
     } else if (s.kind === 'inlay') {
       op.blank = undefined;
       if (s.ttype !== 'vbit') { op.msgs = [...msgs, 'Inlay needs a V-bit: choose "V-bit" (or pick one under Common bits).']; return; }
@@ -334,7 +343,7 @@ function compile(op: Op) {
     } else {
       const tabs = s.tabs ? { count: s.tabn, width: s.tabw, height: s.tabh } : undefined;
       if (tabs && tabs.height >= s.depth) msgs.push('Tab height is as tall as the cut, so no tabs would be left. Lower the tab height.');
-      op.tp = profile(closed, s.kind, { ...params, tabs, dogbone: s.dogbone });
+      op.tp = profile(closed, s.kind, { ...params, tabs, dogbone: s.dogbone, lead: s.lead ? Math.min(8, Math.max(2, s.diameter)) : 0 });
       if (s.dogbone && s.kind === 'inside' && s.ttype !== 'flat') msgs.push('Dogbone corners are meant for a flat end mill. With other bits the relief is not accurate.');
     }
   }
@@ -692,7 +701,7 @@ function draw() {
     ctx.lineWidth = o === active ? 2 : 1.2;
     for (const c of o.tp.cuts) {
       // V-carve passes sit at different depths along the skeleton, so draw all of them; other operations show the deepest pass.
-      if (o.s.kind !== 'vcarve' && o.s.kind !== 'inlay' && c.z !== last) continue;
+      if (o.s.kind !== 'vcarve' && o.s.kind !== 'inlay' && o.s.kind !== 'inlayflat' && c.z !== last) continue;
       // inlay: the recess is blue, the insert (cut on a second, mirrored board) is purple and dashed
       if (c.tag === 'male') { ctx.strokeStyle = '#8e24aa'; ctx.setLineDash([5, 3]); } else if (c.tag === 'female') { ctx.strokeStyle = '#1565c0'; ctx.setLineDash([]); }
       trace(c.loop, c.closed); ctx.stroke();
@@ -1115,13 +1124,14 @@ $('setback').addEventListener('click', () => setRef('back'));
 
 // Choosing V-carve while a flat bit is selected switches to a typical 60 degree V-bit and a shallow depth.
 sel('op').addEventListener('input', () => {
+  if (sel('op').value === 'inlayflat' && sel('ttype').value === 'vbit') { sel('ttype').value = 'flat'; inp('tool').value = '6'; syncVisibility(); }
   if (['vcarve', 'inlay'].includes(sel('op').value) && sel('ttype').value !== 'vbit') {
     sel('ttype').value = 'vbit'; inp('tool').value = '6.35'; inp('vangle').value = '60'; inp('vtip').value = '0.2'; inp('flute').value = '15';
     if (+inp('depth').value > 6 || !(+inp('depth').value > 0)) inp('depth').value = '3';
   }
 });
 
-['op', 'side', 'frame', 'ttype', 'tool', 'flute', 'vangle', 'vtip', 'vwide', 'depth', 'start', 'dir', 'ramp', 'tabs', 'tabn', 'tabw', 'tabh', 'dogbone', 'iglue', 'imoat', 'vflat', 'stlx', 'stly', 'stltop', 'stlsr', 'stlsf', 'stlleave', 'stlzig'].forEach(id =>
+['op', 'side', 'frame', 'ttype', 'tool', 'flute', 'vangle', 'vtip', 'vwide', 'depth', 'start', 'dir', 'ramp', 'tabs', 'lead', 'tabn', 'tabw', 'tabh', 'dogbone', 'iglue', 'imoat', 'vflat', 'stlx', 'stly', 'stltop', 'stlsr', 'stlsf', 'stlleave', 'stlzig', 'stlcross'].forEach(id =>
   $(id).addEventListener('input', () => {
     syncVisibility();
     if (active) { const kind = active.s.kind; active.s = readForm(); if (is3d(kind)) active.s.kind = kind; compile(active); refreshUi(); draw(); }

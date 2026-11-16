@@ -111,6 +111,46 @@ export function buildMoves(
 }
 
 /**
+ * Add a lead-in and/or lead-out to the moves of one closed loop: the bit arrives (and leaves) along a quarter circle that is
+ * tangent to the path and bends away from the finished edge, so there is no plunge mark or dwell mark on the wall.
+ * With a lead-in, `body` must be the loop cut flat at `z` (`buildMoves(loop, z, z, ...)`): the arc does the descent, from
+ * `zStart` to `z`. With only a lead-out, `body` is whatever the pass normally is (ramp and all).
+ * `wasteLeft`: the waste (the side away from the finished edge) is on the left of travel. `clear` says whether a point is
+ * somewhere the bit may go; if any part of an arc fails it the radius is halved (twice), then null is returned and the
+ * caller uses the ordinary moves.
+ */
+export function leadMoves(
+  body: Pt3[], zStart: number, z: number, radius: number, wasteLeft: boolean, lead: { in: boolean; out: boolean },
+  clear: (p: { x: number; y: number }) => boolean,
+): Pt3[] | null {
+  if (body.length < 3 || (!lead.in && !lead.out)) return null;
+  const unit = (a: Pt3, b: Pt3) => { const l = Math.hypot(b.x - a.x, b.y - a.y) || 1; return { x: (b.x - a.x) / l, y: (b.y - a.y) / l }; };
+  const norm = (t: { x: number; y: number }) => (wasteLeft ? { x: -t.y, y: t.x } : { x: t.y, y: -t.x });
+  const p0 = body[0];
+  // the first horizontal move gives the direction in; the last horizontal move gives the direction out
+  const h = (a: Pt3, b: Pt3) => Math.hypot(b.x - a.x, b.y - a.y) > 1e-9;
+  let i1 = 1; while (i1 < body.length - 1 && !h(body[0], body[i1])) i1++;
+  let o1 = body.length - 2; while (o1 > 0 && !h(body[o1], body[body.length - 1])) o1--;
+  const tIn = unit(body[0], body[i1]), tOut = unit(body[o1], body[body.length - 1]);
+  const N = 12;
+  const arc = (t: { x: number; y: number }, R: number, from: number, zAt: (k: number) => number): Pt3[] => {
+    const n = norm(t), out: Pt3[] = [];
+    for (let k = 0; k <= N; k++) {
+      const f = from + (k / N) * (Math.PI / 2);
+      out.push({ x: p0.x + R * n.x + R * (-n.x * Math.cos(f) + t.x * Math.sin(f)), y: p0.y + R * n.y + R * (-n.y * Math.cos(f) + t.y * Math.sin(f)), z: zAt(k) });
+    }
+    return out;
+  };
+  for (let R = radius, tries = 0; tries < 3; R /= 2, tries++) {
+    const inArc = lead.in ? arc(tIn, R, -Math.PI / 2, k => zStart + (z - zStart) * (k / N)) : [];
+    const outArc = lead.out ? arc(tOut, R, 0, () => body[body.length - 1].z) : [];
+    if (![...inArc, ...outArc].every(q => clear(q))) continue;
+    return [...(lead.in ? inArc : body.slice(0, 1)), ...body.slice(1), ...outArc.slice(1)];
+  }
+  return null;
+}
+
+/**
  * Moves for an OPEN polyline cut down to z. With ramping, the tool descends
  * along the line (going back and forth if the line is short), then finishes
  * flat so the whole line ends up at full depth.

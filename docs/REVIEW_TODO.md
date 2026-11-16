@@ -4,6 +4,8 @@ A read-through of the code (by Fable) was checked and actioned by Sonnet the sam
 
 ## Agreed and fixed
 
+- [x] **New since the review:** 3D finishing in both directions (cross pass), lead-in/lead-out on cut-outs, flat-bottom inlay.
+
 - [x] **3D model saved in projects** (and undo steps, and the automatic backup), so opening a project no longer needs the STL loaded again.
 - [x] **Repository.** First commit made and pushed to github.com/zz9pa/Camfree.
 
@@ -30,9 +32,11 @@ A read-through of the code (by Fable) was checked and actioned by Sonnet the sam
 ## Not done
 
 - [ ] **More UI logic into `core`.** Partly done: drill grouping (`planDrill`), zero/stock placement (`core/place.ts`) and the side-2 model turn (`turnOver`) are in `core` with tests. The rest of `compile()`, `compile3d()` and `placed()` in `src/main.ts` (reading the form, assembling the setups) is still untested.
+- [ ] **Not built (features):** rest machining; true steep-wall (constant-Z) contouring in 3D finishing (the cross pass helps but is not the same); helical arcs (G2/G3 with Z); lead-in/out for pockets, on-the-line and V-carve; DXF HATCH import; binary DXF and DWG. None is hidden or stubbed: the app simply does not offer them.
 
 ## Still not checked
 
 - Two-sided simulation stock position: checked by reading the code (same translation for both sides, stock symmetric about the flip line); not looked at visually.
 - Split jobs with drill or 3D operations: checked only as far as the segment files being produced (2 segments for a 66 mm part on a 60 mm bed); not simulated.
+- Simulating an inlay (recess then insert board) treats both boards as one stock, so it is not meaningful for inlay jobs.
 - Anything on a real machine. In particular, run an air-cut first: climb/conventional just changed direction, and Marlin G0 output changed.
