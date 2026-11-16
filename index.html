@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>open-cam</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0; display: flex; height: 100vh; }
+  aside { width: 340px; padding: 14px; background: #f4f4f6; overflow: auto; flex: none; }
+  main { flex: 1; position: relative; min-width: 0; }
+  canvas { width: 100%; height: 100%; display: block; background: #fff; cursor: crosshair; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  h2 { font-size: 12px; text-transform: uppercase; color: #666; margin: 16px 0 6px; }
+  label { display: block; margin: 6px 0; }
+  label.check { display: flex; gap: 8px; align-items: center; }
+  label.check input { width: auto; }
+  input, select { width: 100%; box-sizing: border-box; padding: 5px; }
+  .row { display: flex; gap: 8px; } .row label { flex: 1; }
+  small { color: #666; display: block; }
+  button { padding: 7px 10px; font-size: 14px; cursor: pointer; }
+  button.big { width: 100%; padding: 10px; margin-top: 10px; font-size: 15px; }
+  .btns { display: flex; gap: 6px; margin-top: 8px; } .btns button { flex: 1; }
+  #warn { color: #b00020; margin-top: 8px; } #warn div { margin: 4px 0; }
+  .hidden { display: none; }
+  .helpbtn { padding: 0; width: 18px; height: 18px; line-height: 16px; font-size: 12px; margin-left: 6px; border-radius: 50%; border: 1px solid #90a4ae; background: #fff; color: #37474f; cursor: pointer; vertical-align: middle; }
+  .helpbtn:hover { background: #e3f2fd; }
+  #helpdrawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 94vw); background: #fff; border-left: 1px solid #cfd8dc; box-shadow: -8px 0 30px #0003; z-index: 30; display: flex; flex-direction: column; }
+  #helpdrawer.hidden { display: none; }
+  #helpdrawer .hd { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid #eceff1; background: #f6f8fa; }
+  #helpdrawer .hd a { margin-left: auto; font-size: 13px; }
+  #helpdrawer .hd button { padding: 2px 9px; }
+  #helpframe { flex: 1; border: 0; width: 100%; }
+  summary { cursor: pointer; }
+  #layers { max-height: 220px; overflow: auto; background: #fff; border: 1px solid #ddd; }
+  .layer { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-bottom: 1px solid #eee; }
+  .layer span.n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer button { padding: 2px 6px; font-size: 12px; }
+  .layer input { width: auto; }
+  #ops .op { background: #fff; border: 1px solid #ddd; padding: 6px 8px; margin: 4px 0; cursor: pointer; }
+  #ops .op.active { border-color: #1565c0; background: #e8f0fe; }
+  #hint { position: absolute; left: 10px; bottom: 8px; background: #fffd; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #444; }
+  #sel { font-weight: 600; margin: 6px 0; }
+#simdlg:not(.hidden){display:flex}#simdlg.hidden{display:none}</style>
+</head>
+<body>
+<aside>
+  <h1>open-cam <a href="help.html" target="_blank" style="font-size:13px;font-weight:normal;margin-left:8px">Help &amp; guide</a></h1>
+  <div id="restorebar" class="hidden" style="background:#fff3cd;border:1px solid #ffe08a;padding:8px;margin:8px 0;font-size:13px">
+    <div id="restoretext"></div>
+    <div class="btns"><button id="restoreyes">Restore it</button><button id="restoreno">Start fresh</button></div>
+    <small>The automatic backup is paused until you choose.</small>
+  </div>
+  <div class="btns" id="projbar">
+    <button id="undo" disabled title="Undo the last change (Ctrl+Z)">Undo</button>
+    <button id="redo" disabled title="Redo (Ctrl+Y or Ctrl+Shift+Z)">Redo</button>
+    <button id="saveproj" title="Save everything (drawing, operations, settings) to a file (Ctrl+S)">Save project</button>
+    <button id="openproj" title="Open a saved project file">Open project</button>
+  </div>
+  <input type="file" id="projfile" accept=".json,.opencam" class="hidden" />
+  <h2 data-help="1-your-drawing">1. Your drawing</h2>
+  <input type="file" id="file" accept=".svg,.dxf" />
+  <small>SVG or DXF. Units are read from the file; layers are kept.</small>
+  <div id="drawinfo" class="hidden" style="background:#eef3f8;padding:6px 8px;margin:6px 0;font-size:13px"></div>
+  <details id="impbox" class="hidden">
+    <summary data-help="importing-drawings-svg-and-dxf">Import settings</summary>
+    <label>Units in the file
+      <select id="impunits">
+        <option value="auto">Automatic (read from the file)</option>
+        <option value="1">Millimetres</option>
+        <option value="25.4">Inches</option>
+        <option value="10">Centimetres</option>
+        <option value="0.26458333">Pixels (96 per inch)</option>
+      </select>
+    </label>
+    <div class="row">
+      <label>Scale (%)<input id="impscale" type="number" value="100" min="1" step="1" /></label>
+      <label>Join gaps up to (mm)<input id="impjoin" type="number" value="0.05" min="0" step="0.01" /></label>
+    </div>
+    <label>Close nearly-closed outlines up to (mm)<input id="impclose" type="number" value="2" min="0" step="0.5" /></label>
+    <label class="check"><input type="checkbox" id="impdedupe" checked /> Remove duplicate lines</label>
+    <label>"Join selected" gaps up to (mm)<input id="seljoin" type="number" value="5" min="0" step="0.5" /></label>
+    <small>Changing these re-reads the file and clears your operations.</small>
+  </details>
+  <div id="impreport" class="hidden" style="font-size:13px;color:#444;margin:6px 0"></div>
+  <div id="layers" class="hidden"></div>
+  <div class="btns hidden" id="selbtns">
+    <button id="clearsel">Clear selection</button>
+    <button id="fit">Fit view</button>
+  </div>
+  <details id="textbox">
+    <summary data-help="adding-text">Add text</summary>
+    <label>Text<textarea id="txt" rows="2" style="width:100%;box-sizing:border-box;padding:5px;font:inherit" placeholder="Type here. Press Enter for a new line."></textarea></label>
+    <label>Font<select id="txfont"></select></label>
+    <div class="row">
+      <label>Letter height (mm)<input id="txh" type="number" value="20" min="1" step="1" /></label>
+      <label>Letter spacing (%)<input id="txtrack" type="number" value="0" step="5" /></label>
+    </div>
+    <div class="row">
+      <label>Line spacing (%)<input id="txline" type="number" value="100" min="50" step="5" /></label>
+      <label>Align<select id="txalign"><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
+    </div>
+    <div class="row">
+      <label>X (mm)<input id="txx" type="number" placeholder="centre of view" /></label>
+      <label>Y (mm)<input id="txy" type="number" placeholder="centre of view" /></label>
+    </div>
+    <button id="addtext">Add text to drawing</button>
+    <small id="txinfo">The text becomes ordinary lines on a "Text" layer, so you can cut around it, pocket it or engrave along it. Leave X/Y empty to put it in the middle of the view.</small>
+  </details>
+  <details id="stlbox">
+    <summary data-help="3d-milling">3D model (STL)</summary>
+    <label>Model file (.stl)<input id="stlfile" type="file" accept=".stl" /></label>
+    <div id="stlinfo"><small>Load a 3D model to carve its top surface. Choose the bit under "Bit" below: a ball nose for finishing.</small></div>
+    <div class="row">
+      <label>Top of model<select id="stlup"><option value="+z">+Z (as saved)</option><option value="-z">-Z (upside down)</option><option value="+y">+Y</option><option value="-y">-Y</option><option value="+x">+X</option><option value="-x">-X</option></select></label>
+      <label>Model units<select id="stlunits"><option value="1">mm</option><option value="25.4">inches</option><option value="10">cm</option></select></label>
+    </div>
+    <div class="row">
+      <label>Turn<select id="stlspin"><option value="0">0&deg;</option><option value="90">90&deg;</option><option value="180">180&deg;</option><option value="270">270&deg;</option></select></label>
+      <label>Top is below stock top (mm)<input id="stltop" type="number" value="0" min="0" step="0.5" /></label>
+    </div>
+    <div class="row">
+      <label>Place X (mm)<input id="stlx" type="number" value="0" step="1" /></label>
+      <label>Place Y (mm)<input id="stly" type="number" value="0" step="1" /></label>
+    </div>
+    <div class="row">
+      <label>Roughing step-over (% of bit)<input id="stlsr" type="number" value="40" min="5" max="100" step="5" /></label>
+      <label>Finishing step-over (% of bit)<input id="stlsf" type="number" value="10" min="1" max="50" step="1" /></label>
+    </div>
+    <label>Stock left by roughing (mm)<input id="stlleave" type="number" value="0.5" min="0" step="0.1" /></label>
+    <label class="check"><input type="checkbox" id="stlzig" /> Back-and-forth passes (faster; every second pass is the other cutting direction)</label>
+    <div class="btns"><button id="add3r">Add 3D roughing</button><button id="add3f">Add 3D finishing</button></div>
+    <button id="stloutline">Add the model's outline to the drawing</button>
+    <small>Rough first with a flat bit, then finish with a ball nose. Only the top surface is cut: anything under an overhang is ignored.</small>
+  </details>
+  <div class="btns hidden" id="fixbtns">
+    <button id="runout" title="Select an open line and the outline it should run out through (for example a pocket that opens out of the edge of a part). Each end carries straight on to the outline.">Run open line out to outline</button>
+    <button id="closesel" title="Close each selected open line with a straight line from its end back to its start">Close selected</button>
+    <button id="joinsel" title="Join the selected open lines end to end (gap size set in Import settings)">Join selected</button>
+  </div>
+  <div class="btns hidden" id="measurebtns">
+    <button id="measure" title="Click two points to measure (M)">Measure</button>
+    <button id="clearmeasure">Clear measurements</button>
+  </div>
+  <div id="selinfo" class="hidden" style="font-size:13px;color:#444;margin:6px 0"></div>
+  <div id="measures" style="font-size:13px"></div>
+
+  <h2 data-help="2-machine-and-material">2. Machine &amp; material</h2>
+  <label>Controller firmware
+    <select id="flavor"><option value="marlin">Marlin (MPCNC default)</option><option value="grbl">GRBL</option></select>
+  </label>
+  <label>Arcs (G2/G3)
+    <select id="arcs">
+      <option value="off">Off - short straight lines only (works everywhere)</option>
+      <option value="on">On - smaller, smoother files</option>
+    </select>
+  </label>
+  <div id="arcinfo" style="background:#fff8e1;padding:6px 8px;margin:4px 0;font-size:13px"></div>
+  <button id="arctest" title="A harmless air-cut program: the tool stays 10 mm above zero">Download arc test file (air cut)</button>
+  <div class="row">
+    <label>Work area X (mm)<input id="bedx" type="number" value="600" min="10" /></label>
+    <label>Y (mm)<input id="bedy" type="number" value="600" min="10" /></label>
+  </div>
+  <label>Where X/Y zero is on the machine
+    <select id="zero"><option value="corner">Corner of the work area (part placed 5 mm in)</option><option value="part">Lower-left corner of the part</option><option value="centre">Centre of the part</option></select>
+    <small>Set X/Y zero on the machine to match. Two-sided and split jobs always use the corner.</small>
+  </label>
+  <label>Material
+    <select id="material">
+      <option value="softwood">Softwood (pine)</option>
+      <option value="hardwood">Hardwood</option>
+      <option value="mdf">MDF / plywood</option>
+      <option value="foam">Rigid foam (XPS insulation board)</option>
+    </select>
+  </label>
+  <details id="advmat">
+    <summary data-help="own-cutting-speeds-for-other-materials">Advanced: my own speeds</summary>
+    <label class="check"><input type="checkbox" id="matcustom" /> Use my own values instead of the preset</label>
+    <div class="row">
+      <label>Cutting speed (mm/min)<input id="matfeed" type="number" min="1" step="50" /></label>
+      <label>Plunge speed (mm/min)<input id="matplunge" type="number" min="1" step="50" /></label>
+    </div>
+    <label>Depth per pass (mm)<input id="matstep" type="number" min="0.1" step="0.5" /></label>
+    <small id="matinfo">Starts from the chosen material. Tick the box, then change the numbers for a material that is not listed.</small>
+  </details>
+  <small>The router is manual: the file pauses so you can switch it on (and again at bit changes).</small>
+
+  <h2 data-help="cutting-both-sides-turning-the-stock-over">Two-sided job (optional)</h2>
+  <label class="check"><input type="checkbox" id="ts_on" /> Cut both sides, turning the stock over</label>
+  <div id="tsbox" class="hidden">
+    <label>How do you turn the stock over?
+      <select id="tsflip">
+        <option value="tb">Top to bottom (flip about a horizontal line)</option>
+        <option value="lr">Left to right (flip about a vertical line)</option>
+      </select>
+    </label>
+    <label>Back-side drawing is...
+      <select id="tspre">
+        <option value="1">Already mirrored (as seen after turning over)</option>
+        <option value="0">Not mirrored (drawn like the front) - mirror it for me</option>
+      </select>
+    </label>
+    <div class="btns">
+      <button id="setfront">Selected = FRONT outline</button>
+      <button id="setback">Selected = BACK outline</button>
+    </div>
+    <small id="tsrefs">Select the front outline shape and click the first button; then the matching back outline and click the second. They line up the two sides.</small>
+    <div class="row">
+      <label>Stock X (mm)<input id="stockw" type="number" min="10" /></label>
+      <label>Stock Y (mm)<input id="stockh" type="number" min="10" /></label>
+    </div>
+    <small id="tsstock"></small>
+  </div>
+
+  <h2 data-help="parts-longer-than-your-machine-splitting">Long parts - split into segments (optional)</h2>
+  <label class="check"><input type="checkbox" id="sp_on" /> My part is longer than the work area: cut it in segments</label>
+  <div id="spbox" class="hidden">
+    <label>Overlap between segments (mm)<input id="spoverlap" type="number" value="40" min="20" step="5" /></label>
+    <div id="spinfo" style="background:#e3f2fd;padding:6px 8px;margin:6px 0;font-size:13px"></div>
+    <small>The stock is slid along between segments and located on dowels, so each piece lines up with the last. Each segment re-cuts the overlap so tiny alignment errors do not leave a step. If you also turn the stock over, the same dowels register the flip.</small>
+  </div>
+
+  <div id="dowbox" class="hidden">
+    <h2 data-help="dowel-holes-and-how-deep-they-are">Dowels &amp; registration</h2>
+    <div class="row">
+      <label>Stock thickness (mm)<input id="stockt" type="number" value="40" min="1" step="0.5" /></label>
+      <label>Dowel diameter (mm)<input id="dowd" type="number" value="6" min="2" step="0.5" /></label>
+    </div>
+    <div class="row">
+      <label id="dowcrow">Dowels
+        <select id="dowc"><option value="3">3 keyed</option><option value="2">2</option><option value="4">4</option></select>
+      </label>
+      <label>Away from part (mm)<input id="dowdist" type="number" value="15" min="3" /></label>
+      <label>Pair gap (mm)<input id="dowgap" type="number" value="40" min="10" /></label>
+    </div>
+    <label id="dowmoderow">Dowel holes go...
+      <select id="dowmode">
+        <option value="spoil">Through the stock and into the spoilboard</option>
+        <option value="spoilfirst">Spoilboard first, then shallow holes in the stock (thick stock)</option>
+        <option value="blind">Half the dowel in this piece (joining parts, e.g. a neck)</option>
+      </select>
+    </label>
+    <div class="row">
+      <label>Dowel length (mm)<input id="dowlen" type="number" value="30" min="10" step="1" /></label>
+      <label>Spoilboard thick (mm)<input id="spoilt" type="number" value="18" min="6" step="1" /></label>
+    </div>
+    <div class="row">
+      <label>Drill bit (mm)<input id="dowbit" type="number" value="6" min="1" step="0.5" /></label>
+      <label>Bit cutting length (mm)<input id="dowflute" type="number" value="25" min="3" step="1" /></label>
+      <label>Max hole depth (mm)<input id="dowmax" type="number" min="0" step="1" placeholder="= bit" /></label>
+    </div>
+    <div id="dowinfo" style="background:#e8f5e9;padding:6px 8px;margin:6px 0;font-size:13px"></div>
+    <small>Hole depth is worked out for you from the dowel, stock and spoilboard. "Max hole depth" is the deepest your setup can drill (bit length or Z travel); leave it empty to use the bit's cutting length.</small>
+    <small><b>3 keyed</b> = one dowel at one end, a pair at the other, so the stock only fits one way round after the turn-over. With 2 or 4 dowels the stock can be seated rotated or flipped the wrong way. Mark the top of the stock before side 1 so you know which face was up.</small>
+    <small>Dowel holes are drilled first in side 1 and sit on the turn-over line so they line up again once the stock is flipped.</small>
+  </div>
+
+  <h2 data-help="3-operations">3. Operations</h2>
+  <div id="sel">Nothing selected - click lines in the drawing</div>
+  <label>What to do with the selection
+    <select id="op">
+      <option value="outside">Cut out - outside the line</option>
+      <option value="inside">Cut out - inside the line</option>
+      <option value="on">Cut on the line (engrave / slot)</option>
+      <option value="drill">Drill holes (round shapes)</option>
+      <option value="pocket">Pocket (clear the inside)</option>
+      <option value="vcarve">V-carve (engrave with a V-bit, deeper where wider)</option>
+      <option value="inlay">Inlay (V-carved recess + matching insert)</option>
+    </select>
+  </label>
+  <label id="siderow" class="hidden">Which side
+    <select id="side"><option value="front">Side 1 (front)</option><option value="back">Side 2 (back)</option></select>
+  </label>
+  <label id="framerow" class="hidden">These back-side shapes were drawn...
+    <select id="frame">
+      <option value="front">On the front view (see-through) - flip them for me</option>
+      <option value="back">In a separate back drawing</option>
+    </select>
+  </label>
+  <label>Common bits
+    <select id="bitpreset">
+      <option value="">Choose a common bit (or set your own below)</option>
+      <option value="flat,3,12">3 mm flat end mill</option>
+      <option value="flat,3.175,12">1/8" flat end mill</option>
+      <option value="flat,6,22">6 mm flat end mill</option>
+      <option value="flat,6.35,19">1/4" flat end mill</option>
+      <option value="ball,3,12">3 mm ball nose</option>
+      <option value="ball,6,22">6 mm ball nose</option>
+      <option value="vbit,6.35,60,0.2,15">60&deg; V-bit (1/4" shank)</option>
+      <option value="vbit,6.35,90,0.2,15">90&deg; V-bit (1/4" shank)</option>
+    </select>
+  </label>
+  <label>Bit type
+    <select id="ttype"><option value="flat">Flat end mill</option><option value="ball">Ball nose</option><option value="vbit">V-bit</option></select>
+  </label>
+  <div class="row">
+    <label>Diameter (mm)<input id="tool" type="number" value="6" min="0.5" step="0.1" /></label>
+    <label>Cutting length (mm)<input id="flute" type="number" value="25" min="1" step="1" /></label>
+  </div>
+  <div class="row hidden" id="vrow">
+    <label>V angle (&deg;)<input id="vangle" type="number" value="60" min="10" max="150" /></label>
+    <label>Tip (mm)<input id="vtip" type="number" value="0.2" min="0" step="0.1" /></label>
+  </div>
+  <label>Depth (mm)<input id="depth" type="number" value="12" min="0.1" step="0.5" />
+    <small>Cutting right through? Use the material thickness (a hair more cuts clean through - protect your spoilboard).</small></label>
+  <label id="startrow">Starts at depth (mm)<input id="start" type="number" value="0" min="0" step="0.5" />
+    <small>Leave at 0 to cut from the top of the material. If this operation sits inside something already cut out (for example bolt holes in the floor of a pocket), enter how deep that floor is: the bit then skips the air above it. The depth above is still measured from the top of the material.</small></label>
+  <label>Cut direction
+    <select id="dir"><option value="climb">Climb (cleaner finish, recommended)</option><option value="conventional">Conventional (safer on weak machines)</option></select>
+  </label>
+  <div id="vcarverow" class="hidden">
+    <small style="margin:6px 0">For V-carving, <b>Depth</b> is the deepest the tip will go. Thin strokes are shallower automatically, so the cut is wider where the shape is wider.</small>
+    <label>Where the shape is wider than the bit can reach
+      <select id="vwide">
+        <option value="clear">Clear it flat at the maximum depth</option>
+        <option value="skip">Leave it (only carve what the V reaches)</option>
+        <option value="flat">Clear it with a flat bit first (cleanest, needs a bit change)</option>
+      </select>
+    </label>
+    <label id="vflatrow" class="hidden">Flat bit diameter (mm)<input id="vflat" type="number" value="6" min="0.5" step="0.5" />
+      <small>A flat end mill clears the wide floor to the full depth first. The program pauses for you to change to the V-bit, which then cuts the sloped walls and the thinner strokes.</small></label>
+  </div>
+  <div id="dogrow" class="hidden">
+    <label class="check"><input type="checkbox" id="dogbone" /> Dogbone corners (so square-cornered parts fit)</label>
+  </div>
+  <div id="inlayrow" class="hidden">
+    <small style="margin:6px 0">For inlay, <b>Depth</b> is the depth of the recess. The program first cuts the recess, <b>pauses so you can swap in the insert board</b>, then cuts the insert (mirrored, so it reads correctly once flipped over).</small>
+    <div class="row">
+      <label>Glue gap (mm)<input id="iglue" type="number" value="0.3" min="0" max="2" step="0.1" /></label>
+      <label>Background width (mm)<input id="imoat" type="number" value="2.5" min="1" step="0.5" /></label>
+    </div>
+  </div>
+  <label class="check"><input type="checkbox" id="ramp" checked /> Ramp into the cut (gentler on bit and machine)</label>
+  <div id="tabbox">
+    <label class="check"><input type="checkbox" id="tabs" checked /> Holding tabs (cut-outs only)</label>
+    <div class="row">
+      <label>Tabs<input id="tabn" type="number" value="4" min="1" max="20" /></label>
+      <label>Width (mm)<input id="tabw" type="number" value="6" min="1" step="0.5" /></label>
+      <label>Height (mm)<input id="tabh" type="number" value="3" min="0.5" step="0.5" /></label>
+    </div>
+  </div>
+  <div class="btns">
+    <button id="addop">Add operation from selection</button>
+    <button id="opup" title="Run this operation earlier">&uarr;</button>
+    <button id="opdown" title="Run this operation later">&darr;</button>
+    <button id="delop">Delete</button>
+  </div>
+  <div id="ops"></div>
+  <div id="warn"></div>
+  <div id="eta" style="margin-top:8px;font-size:13px;color:#37474f"></div>
+  <div id="splitfiles"></div>
+  <button id="simbtn" class="big" title="See the material being cut away, in 3D">Simulate the job (3D preview)</button>
+  <button id="dl" class="big">Download G-code</button>
+  <button id="dl0" class="big hidden">Download step 0: spoilboard holes (NO stock)</button>
+  <button id="dl2" class="big hidden">Download side 2 G-code</button>
+  <small id="zeronote">Zero X/Y at the bottom-left of your work area and Z on the TOP of the material. Your part is placed 5 mm in from that corner.</small>
+</aside>
+<main><canvas id="cv"></canvas>
+<div id="hint">Click = select/deselect &middot; Shift+drag = box select &middot; Drag = pan &middot; Wheel = zoom</div></main>
+<div id="simdlg" class="hidden" role="dialog" aria-label="3D simulation" style="position:fixed;inset:0;background:#000a;z-index:50;align-items:center;justify-content:center">
+  <div style="background:#fff;width:min(1100px,94vw);height:min(760px,92vh);display:flex;flex-direction:column;border-radius:6px;overflow:hidden">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;padding:8px 10px;border-bottom:1px solid #ddd;font-size:13px">
+      <b style="font-size:15px">3D simulation</b>
+      <label>Show<select id="simsel"></select></label>
+      <label>Stock<select id="simstock"><option value="auto">Automatic (fits the cuts)</option><option value="custom">My own size</option></select></label>
+      <span id="simsize" class="hidden"><label>W <input id="simw" type="number" value="300" style="width:64px"></label> <label>H <input id="simh" type="number" value="200" style="width:64px"></label> <label>Thick <input id="simt" type="number" value="18" style="width:56px"></label></span>
+      <label>Depth exaggeration<select id="simz"><option value="1">1x (true)</option><option value="2">2x</option><option value="4">4x</option></select></label>
+      <button id="simtop">Top</button><button id="simiso">3D</button><button id="simfront">Side</button>
+      <button id="simclose" style="margin-left:auto">Close</button>
+    </div>
+    <div id="simstatus" style="padding:6px 10px;font-size:13px;min-height:18px"></div>
+    <canvas id="simcv" style="flex:1;width:100%;min-height:0;display:block"></canvas>
+    <div style="padding:4px 10px;font-size:12px;color:#555">Drag to rotate &middot; right-drag or Shift+drag to move &middot; wheel to zoom. Light wood = uncut top, darker = deeper, grey = cut right through.</div>
+  </div>
+</div><div id="helpdrawer" class="hidden" role="dialog" aria-label="Help">
+  <div class="hd"><b>Help</b><a id="helpfull" href="help.html" target="_blank">Open the full guide</a><button id="helpclose" title="Close (Esc)">&times;</button></div>
+  <iframe id="helpframe" title="Help"></iframe>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
