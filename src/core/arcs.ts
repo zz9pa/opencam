@@ -3,7 +3,8 @@ import type { Pt3 } from './types';
 /** One output move: a straight line, or a circular arc (G2/G3) with the centre given relative to the arc start. */
 export interface Seg {
   to: Pt3;
-  arc?: { i: number; j: number; cw: boolean; radius: number };
+  /** `sweep`: angle covered, radians. If `to.z` differs from the start's, the arc is a helix (Z changes evenly along it). */
+  arc?: { i: number; j: number; cw: boolean; radius: number; sweep: number };
 }
 
 const MIN_RADIUS = 0.4;     // mm: tighter than this is left as short lines
@@ -23,13 +24,17 @@ function circumcircle(a: Pt3, b: Pt3, c: Pt3): Circle | null {
   return { cx, cy, r: Math.hypot(a.x - cx, a.y - cy) };
 }
 
-/** Does the run of points p[s..e] lie on one circle (within tol), at constant Z, turning one way, sweeping <= half a circle? */
-function fits(p: Pt3[], s: number, e: number, tol: number): (Circle & { cw: boolean }) | null {
-  if (p.some((m, k) => k >= s && k <= e && (m.rapid || Math.abs(m.z - p[s].z) > 1e-9))) return null;
+/**
+ * Does the run of points p[s..e] lie on one circle (within tol), turning one way, sweeping <= half a circle, with Z either
+ * constant or changing evenly with the angle (a helix, as a ramped circle makes)?
+ */
+function fits(p: Pt3[], s: number, e: number, tol: number): (Circle & { cw: boolean; sweep: number }) | null {
+  if (p.some((m, k) => k >= s && k <= e && m.rapid)) return null;
   const mid = (s + e) >> 1;
   const c = circumcircle(p[s], p[mid], p[e]);
   if (!c || c.r < MIN_RADIUS || c.r > MAX_RADIUS) return null;
   let dir = 0, sweep = 0;
+  const angles: number[] = [0];
   let prevAng = Math.atan2(p[s].y - c.cy, p[s].x - c.cx);
   for (let k = s; k <= e; k++) {
     if (Math.abs(Math.hypot(p[k].x - c.cx, p[k].y - c.cy) - c.r) > tol) return null;
@@ -42,22 +47,29 @@ function fits(p: Pt3[], s: number, e: number, tol: number): (Circle & { cw: bool
     const sgn = d > 0 ? 1 : -1;
     if (dir === 0) dir = sgn; else if (sgn !== dir) return null; // must keep turning the same way
     sweep += Math.abs(d);
+    angles.push(sweep);
     prevAng = ang;
   }
   if (sweep > MAX_SWEEP) return null;
-  return { ...c, cw: dir < 0 };
+  // Z: constant, or a straight line against the angle turned
+  const dz = p[e].z - p[s].z;
+  for (let k = s; k <= e; k++) {
+    const want = Math.abs(dz) < 1e-9 ? p[s].z : p[s].z + dz * (angles[k - s] / sweep);
+    if (Math.abs(p[k].z - want) > Math.min(tol, 0.01) + 1e-9) return null;
+  }
+  return { ...c, cw: dir < 0, sweep };
 }
 
 /**
  * Turn runs of short straight moves that follow a circle into G2/G3 arcs. `p[0]` is the start point; the
- * result has one entry per move after it. Only moves at constant Z are merged, and never rapids.
+ * result has one entry per move after it. Z may change along an arc only evenly (a helix); rapids are never merged.
  * Every original point stays within `tol` mm of the arc that replaces it.
  */
 export function fitArcs(p: Pt3[], tol = 0.01): Seg[] {
   const out: Seg[] = [];
   let s = 0;
   while (s < p.length - 1) {
-    let best: { e: number; c: Circle & { cw: boolean } } | null = null;
+    let best: { e: number; c: Circle & { cw: boolean; sweep: number } } | null = null;
     // Grow the run while it still fits. Three points is the minimum worth replacing.
     for (let e = s + 3; e < p.length && e <= s + MAX_RUN; e++) {
       const c = fits(p, s, e, tol);
@@ -66,7 +78,7 @@ export function fitArcs(p: Pt3[], tol = 0.01): Seg[] {
     }
     if (best) {
       const { e, c } = best;
-      out.push({ to: p[e], arc: { i: c.cx - p[s].x, j: c.cy - p[s].y, cw: c.cw, radius: c.r } });
+      out.push({ to: p[e], arc: { i: c.cx - p[s].x, j: c.cy - p[s].y, cw: c.cw, radius: c.r, sweep: c.sweep } });
       s = e;
     } else {
       out.push({ to: p[s + 1] });

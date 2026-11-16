@@ -4,6 +4,8 @@ A read-through of the code (by Fable) was checked and actioned by Sonnet the sam
 
 ## Agreed and fixed
 
+- [x] **Features added after the review:** rest roughing and steep-wall contours in 3D, helical G2/G3 arcs, DXF hatch outlines, binary DXF.
+
 - [x] **New since the review:** 3D finishing in both directions (cross pass), lead-in/lead-out on cut-outs, flat-bottom inlay.
 
 - [x] **3D model saved in projects** (and undo steps, and the automatic backup), so opening a project no longer needs the STL loaded again.
@@ -32,7 +34,8 @@ A read-through of the code (by Fable) was checked and actioned by Sonnet the sam
 ## Not done
 
 - [ ] **More UI logic into `core`.** Partly done: drill grouping (`planDrill`), zero/stock placement (`core/place.ts`) and the side-2 model turn (`turnOver`) are in `core` with tests. The rest of `compile()`, `compile3d()` and `placed()` in `src/main.ts` (reading the form, assembling the setups) is still untested.
-- [ ] **Not built (features):** rest machining; true steep-wall (constant-Z) contouring in 3D finishing (the cross pass helps but is not the same); helical arcs (G2/G3 with Z); lead-in/out for pockets, on-the-line and V-carve; DXF HATCH import; binary DXF and DWG. None is hidden or stubbed: the app simply does not offer them.
+- [ ] **Not built (features):** lead-in/out for pockets, on-the-line and V-carve (only cut-outs have it: a pocket's rings are inside the material and an on-the-line cut has no waste side to lead into); rest machining for 2D pockets; DWG import (needs a large binary-format library); DXF hatches bounded by splines; hatches inside blocks.
+- [x] **Done since the last note:** rest roughing (3D), steep-wall contours (3D finishing), helical arcs, DXF hatch outlines, binary DXF.
 
 ## Still not checked
 

@@ -18,6 +18,7 @@ import { planEntries } from './core/gcode';
 import { Viewer } from './sim3d';
 import { vcarve, vcarveWithFlat } from './core/vcarve';
 import { inlay, inlayFlat } from './core/inlay';
+import { isBinaryDxf, binaryDxfToAscii } from './import/bindxf';
 import { zeroOffset, stockOffset } from './core/place';
 import { parseStl, orient, turnOver, heightMap, EMPTY, StlError, type Mesh, type Oriented, type Up } from './core/mesh';
 import { rough3d, finish3d } from './core/mill3d';
@@ -41,7 +42,7 @@ const KIND_NAME: Record<Kind, string> = {
 const is3d = (k: Kind) => k === 'rough3d' || k === 'finish3d';
 
 /** 3D model placement and step settings (the model itself and its orientation are shared by all 3D operations). */
-interface M3 { x: number; y: number; top: number; stepR: number; stepF: number; leave: number; zig: boolean; cross?: boolean }
+interface M3 { x: number; y: number; top: number; stepR: number; stepF: number; leave: number; zig: boolean; cross?: boolean; rest?: number; steep?: number }
 
 interface Settings {
   m3: M3;
@@ -163,14 +164,14 @@ function readForm(): Settings {
     tabs: inp('tabs').checked, lead: inp('lead').checked, tabn: +inp('tabn').value, tabw: +inp('tabw').value, tabh: +inp('tabh').value,
     flute: +inp('flute').value, wide: sel('vwide').value as 'clear' | 'skip' | 'flat', vflat: +inp('vflat').value, glue: +inp('iglue').value, moat: +inp('imoat').value, dogbone: inp('dogbone').checked,
     side: sel('side').value as 'front' | 'back', frame: sel('frame').value as 'front' | 'back',
-    m3: { x: +inp('stlx').value || 0, y: +inp('stly').value || 0, top: +inp('stltop').value || 0, stepR: +inp('stlsr').value, stepF: +inp('stlsf').value, leave: +inp('stlleave').value || 0, zig: inp('stlzig').checked, cross: inp('stlcross').checked },
+    m3: { x: +inp('stlx').value || 0, y: +inp('stly').value || 0, top: +inp('stltop').value || 0, stepR: +inp('stlsr').value, stepF: +inp('stlsf').value, leave: +inp('stlleave').value || 0, zig: inp('stlzig').checked, cross: inp('stlcross').checked, rest: +inp('stlrest').value || 0, steep: +inp('stlsteep').value || 0 },
   };
 }
 function writeForm(s: Settings) {
   if (!is3d(s.kind)) sel('op').value = s.kind;
   if (s.m3) {
     inp('stlx').value = String(s.m3.x); inp('stly').value = String(s.m3.y); inp('stltop').value = String(s.m3.top);
-    inp('stlsr').value = String(s.m3.stepR); inp('stlsf').value = String(s.m3.stepF); inp('stlleave').value = String(s.m3.leave); inp('stlzig').checked = s.m3.zig; inp('stlcross').checked = !!s.m3.cross;
+    inp('stlsr').value = String(s.m3.stepR); inp('stlsf').value = String(s.m3.stepF); inp('stlleave').value = String(s.m3.leave); inp('stlzig').checked = s.m3.zig; inp('stlcross').checked = !!s.m3.cross; inp('stlrest').value = String(s.m3.rest ?? 0); inp('stlsteep').value = String(s.m3.steep ?? 0);
   }
   sel('ttype').value = s.ttype; inp('tool').value = String(s.diameter);
   inp('vangle').value = String(s.angle); inp('vtip').value = String(s.tip); inp('depth').value = String(s.depth); inp('start').value = String(s.start ?? 0);
@@ -231,7 +232,7 @@ function compile3d(op: Op, tool: Tool, material: ReturnType<typeof currentMateri
   }
   msgs.push(...toolWarnings(tool, mdl.h + top, 'pocket'));
   const common = { tool, material, direction: s.dir, zigzag: m3.zig, top, at, stepover: s.diameter * step / 100 };
-  const r = s.kind === 'rough3d' ? rough3d(mdl, { ...common, stepdown: material.stepdown, leave: m3.leave }) : finish3d(mdl, { ...common, cross: !!m3.cross });
+  const r = s.kind === 'rough3d' ? rough3d(mdl, { ...common, stepdown: material.stepdown, leave: m3.leave, rest: m3.rest }) : finish3d(mdl, { ...common, cross: !!m3.cross, steep: m3.steep });
   op.tp = r.toolpath;
   if (back) op.tp.name = `SIDE 2: ${op.tp.name}`;
   msgs.push(...r.warnings);
@@ -1061,7 +1062,13 @@ addEventListener('keydown', e => {
 inp('file').addEventListener('change', async e => {
   const f = (e.target as HTMLInputElement).files?.[0];
   if (!f) return;
-  loadedFile = { name: f.name, text: await f.text() };
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  let text: string;
+  if (isBinaryDxf(bytes)) {
+    try { text = binaryDxfToAscii(bytes); } catch (err) { say((err as Error).message); return; }
+    say(`${f.name} is a binary DXF file: it was converted to text and read.`);
+  } else text = new TextDecoder().decode(bytes);
+  loadedFile = { name: f.name, text };
   sel('impunits').value = 'auto'; inp('impscale').value = '100';
   loadDrawing();
 });
@@ -1131,7 +1138,7 @@ sel('op').addEventListener('input', () => {
   }
 });
 
-['op', 'side', 'frame', 'ttype', 'tool', 'flute', 'vangle', 'vtip', 'vwide', 'depth', 'start', 'dir', 'ramp', 'tabs', 'lead', 'tabn', 'tabw', 'tabh', 'dogbone', 'iglue', 'imoat', 'vflat', 'stlx', 'stly', 'stltop', 'stlsr', 'stlsf', 'stlleave', 'stlzig', 'stlcross'].forEach(id =>
+['op', 'side', 'frame', 'ttype', 'tool', 'flute', 'vangle', 'vtip', 'vwide', 'depth', 'start', 'dir', 'ramp', 'tabs', 'lead', 'tabn', 'tabw', 'tabh', 'dogbone', 'iglue', 'imoat', 'vflat', 'stlx', 'stly', 'stltop', 'stlsr', 'stlsf', 'stlleave', 'stlzig', 'stlcross', 'stlrest', 'stlsteep'].forEach(id =>
   $(id).addEventListener('input', () => {
     syncVisibility();
     if (active) { const kind = active.s.kind; active.s = readForm(); if (is3d(kind)) active.s.kind = kind; compile(active); refreshUi(); draw(); }

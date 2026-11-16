@@ -135,9 +135,10 @@ Read any warnings (red text under the operations). Under them, open-cam shows an
 ### What is read
 
 - **SVG**: paths, rectangles, circles, ellipses, lines, polygons and polylines, with their transforms. Copies made with *clone/use* are included. Layers are kept (drawing-program layers become open-cam layers). Hidden items are skipped.
-- **DXF** (ASCII): lines, polylines (including rounded corners), circles, arcs, ellipses, splines and block inserts (with scale, rotation and arrays), on their layers. Curves are turned into short straight segments accurate to 0.01 mm. Hidden or frozen layers are skipped.
+- **DXF** (ASCII and binary): lines, polylines (including rounded corners), circles, arcs, ellipses, splines and block inserts (with scale, rotation and arrays), on their layers. Curves are turned into short straight segments accurate to 0.01 mm. Hidden or frozen layers are skipped.
 - **Text** (SVG text, DXF TEXT and MTEXT) is turned into outlines with our built-in fonts (see [Adding text](#adding-text)).
-- **Not read**: images, dimensions, hatches and 3D objects. open-cam tells you how many it ignored.
+- **Hatches** (filled areas in a DXF): their outlines are read as closed shapes, unless the same outline is already drawn as a line. A hatch pattern itself is not a cutting path. Hatches bounded by splines cannot be read, and open-cam says so.
+- **Not read**: images, dimensions and 3D objects. open-cam tells you how many it ignored.
 
 ### Units and size
 
@@ -263,7 +264,9 @@ Open the **3D model (STL)** panel and load an STL file. The program carves the *
 5. **Step-over** is how far apart the passes are, as a percentage of the bit diameter. Smaller finishing step-overs give a smoother surface and a longer run.
 6. **Back-and-forth passes** make the job faster by joining passes, but every second pass then cuts in the other direction. Leave it off to keep every pass in the direction you chose under Cut direction.
 7. **Finish in both directions** adds a second set of finishing passes that run across the first. A single set of passes leaves steep walls that run along them rougher than the rest; the crossing set cuts those cleanly. It doubles the finishing time.
-8. **Add the model's outline to the drawing** puts the outline of the model in the drawing, so you can add an ordinary cut-out around it.
+8. **Rest roughing** (diameter of an earlier bigger bit): rough the whole model first with a big bit, then add roughing again with a smaller bit and enter the big bit's diameter here. The smaller bit only cuts where the big one could not reach: tight corners and narrow slots. Use the same stock-left setting for both.
+9. **Steep walls as contour lines** (angle): where the surface is steeper than this angle, the finishing raster stops and the bit follows level contour lines instead, which leaves a much smoother steep wall. Contours are spaced by the finishing step-over in height. Leave at 0 for no contours; 40 to 50 degrees is typical.
+10. **Add the model's outline to the drawing** puts the outline of the model in the drawing, so you can add an ordinary cut-out around it.
 
 The warnings list tells you when part of the surface is too fine for the chosen bit (tight inside curves and narrow grooves). A smaller bit cuts closer there.
 
@@ -387,7 +390,7 @@ Normally open-cam writes curves as many very short straight moves, which is unde
 
 Things to know:
 
-- Ramps (gradual descents) and straight moves stay as short straight lines. Only flat curves become arcs, so a job full of ramps shrinks less than one with long flat curves.
+- A gradual descent round a curve (a ramp) is written as a spiral arc, with a Z word in the G2/G3 line. GRBL and Marlin (with arc support) both do this. If a ramped entry ever behaves oddly on your machine, switch arcs off: the straight-line version always works. Straight moves stay as straight lines.
 - If your machine stutters or draws arcs badly, switch arcs off: the straight-line version always works.
 
 ## Cutting both sides (turning the stock over)
@@ -501,8 +504,8 @@ open-cam shows the windows on the preview (dashed vertical lines) and the pins (
 
 ## Limits
 
-- Cuts flat shapes (2D and 2.5D) and the top surface of a 3D model. It cannot cut undercuts, and finishing does not yet clear leftover material in tight corners with a smaller bit (rest machining).
-- Input is SVG or ASCII DXF (binary DXF, DWG and other formats should be saved as DXF or SVG first). Images, hatches and 3D objects are not read. Text uses our built-in fonts, not yours.
+- Cuts flat shapes (2D and 2.5D) and the top surface of a 3D model. It cannot cut undercuts. Rest machining exists for 3D roughing only, not for 2D pockets.
+- Input is SVG or DXF, ASCII or binary (DWG and other formats should be saved as DXF or SVG first). Images and 3D objects are not read. Text uses our built-in fonts, not yours.
 - Curves are written as short straight lines unless you switch on arcs (which needs controller support).
 - Feeds and speeds are cautious starting points, not guarantees. Machines differ.
 - open-cam does not know where your clamps are, how far your Z axis can lift, or how tall your spindle is. Check those yourself.

@@ -278,3 +278,68 @@ describe('finishing in both directions', () => {
     expect(last[0].x).toBeGreaterThan(first[0].x);
   });
 });
+
+describe('rest roughing', () => {
+  // a walled pit 10 x 10 (floor 6 deep) with a 3 x 3 slot sunk 6 mm further into the middle of the floor
+  const pit = () => orient(field((x, y) => (Math.abs(x) > 5 || Math.abs(y) > 5 ? 0 : Math.abs(x) < 1.5 && Math.abs(y) < 1.5 ? -12 : -6), -10, 10, -10, 10, 0.5), DEFAULT_ORIENT);
+  const small: Tool = { type: 'flat', diameter: 2 };
+  const base = { tool: small, material: mat, direction: 'climb' as const, zigzag: false, top: 0, at: { x: 0, y: 0 }, stepover: 1, stepdown: 2, leave: 0 };
+  it('only cuts where the bigger bit stayed above the level', () => {
+    const full = rough3d(pit(), base), rest = rough3d(pit(), { ...base, rest: 4 });
+    const n = (r: typeof full) => r.toolpath.cuts.reduce((s, c) => s + c.moves.reduce((q, m, i) => q + (i && !m.rapid ? Math.hypot(m.x - c.moves[i - 1].x, m.y - c.moves[i - 1].y) : 0), 0), 0);
+    expect(n(rest)).toBeGreaterThan(0);
+    expect(n(rest)).toBeLessThan(n(full) * 0.6);
+    // the slot (deeper than the floor the big bit can reach) is still cut in full, and so is the corner the big bit rounds off
+    expect(Math.min(...rest.toolpath.cuts.flatMap(c => c.moves.map(m => m.z)))).toBeLessThan(-11.5);
+    expect(rest.toolpath.cuts.some(c => c.moves.some(m => Math.hypot(m.x - 5.2, m.y - 5.2) < 2 && m.z < -5.9))).toBe(true);
+  });
+  it('an earlier bit that is not bigger is ignored, with a warning', () => {
+    const r = rough3d(pit(), { ...base, rest: 2 });
+    expect(r.warnings.join(' ')).toMatch(/nothing to rest/);
+    expect(r.toolpath.cuts.length).toBe(rough3d(pit(), base).toolpath.cuts.length);
+  });
+});
+
+import { contours } from '../src/core/mill3d';
+describe('steep walls as contours', () => {
+  // flat at 0 for x > 11, a 1 mm wide ramp (slope 8 = 83 degrees) down to -8 for x < 10
+  const cliff = () => orient(field((x, y) => (x > 1 ? 0 : x < 0 ? -8 : -8 + 8 * x), -10, 20, -10, 10, 0.25), DEFAULT_ORIENT);
+  const run = (steep: number, dir: 'climb' | 'conventional' = 'climb') => finish3d(cliff(), { tool: ball3, material: mat, direction: dir, zigzag: false, top: 0, at: { x: 0, y: 0 }, stepover: 1, steep });
+  it('level contour passes follow the wall; the raster leaves the wall alone', () => {
+    const off = run(0), on = run(45);
+    const level = (tp: typeof on.toolpath) => tp.cuts.filter(c => c.moves.length >= 2 && c.moves.every(m => Math.abs(m.z - c.moves[0].z) < 1e-6) && Math.max(...c.moves.map(m => m.y)) - Math.min(...c.moves.map(m => m.y)) > 10);
+    expect(level(off.toolpath).length).toBe(0);
+    const lv = level(on.toolpath);
+    expect(lv.length).toBeGreaterThan(4);
+    // they run up the wall: x stays within the ramp (plus the ball radius), and the levels differ
+    for (const c of lv) for (const m of c.moves) expect(m.x).toBeGreaterThan(6.5);
+    expect(new Set(lv.map(c => +c.moves[0].z.toFixed(3))).size).toBeGreaterThan(4);
+  });
+  it('climb keeps the wall (the high ground) on the right of travel; conventional on the left', () => {
+    const dirY = (tp: ReturnType<typeof run>['toolpath']) => { const c = tp.cuts.find(q => q.moves.length >= 2 && q.moves.every(m => Math.abs(m.z - q.moves[0].z) < 1e-6) && Math.abs(q.moves[q.moves.length - 1].y - q.moves[0].y) > 10)!; return c.moves[c.moves.length - 1].y - c.moves[0].y; };
+    // the high ground is at +X; heading +Y has +X on its right
+    expect(dirY(run(45, 'climb').toolpath)).toBeGreaterThan(0);
+    expect(dirY(run(45, 'conventional').toolpath)).toBeLessThan(0);
+  });
+  it('no steep area means no contours (a gentle dome with a 70 degree limit)', () => {
+    const r = finish3d(domeModel(), { tool: ball3, material: mat, direction: 'climb', zigzag: false, top: 0, at: { x: 0, y: 0 }, stepover: 2, steep: 80 });
+    const plain = finish3d(domeModel(), { tool: ball3, material: mat, direction: 'climb', zigzag: false, top: 0, at: { x: 0, y: 0 }, stepover: 2 });
+    expect(r.toolpath.cuts.length).toBeGreaterThanOrEqual(plain.toolpath.cuts.length - 2);
+  });
+  it('contours of a cone are circles', () => {
+    const cone = orient(field((x, y) => -Math.hypot(x, y), -10, 10, -10, 10, 0.25), DEFAULT_ORIENT);
+    const hm = heightMap(cone, 0.25);
+    const S = new Float32Array(hm.z);
+    const sq = Int32Array.from({ length: (hm.nx - 1) * (hm.ny - 1) }, (_, q) => Math.floor(q / (hm.nx - 1)) * hm.nx + (q % (hm.nx - 1)));
+    const lines = contours(hm, S, sq, -5, true, { x: 0, y: 0 });
+    expect(lines.length).toBe(1);
+    const c = lines[0];
+    expect(Math.hypot(c[0].x - c[c.length - 1].x, c[0].y - c[c.length - 1].y)).toBeLessThan(1e-6);
+    const cx = hm.nx * hm.cell / 2, cy = hm.ny * hm.cell / 2;
+    const radii = c.map(q => Math.hypot(q.x - cx, q.y - cy));
+    expect(Math.max(...radii) - Math.min(...radii)).toBeLessThan(0.3);
+    // higher ground (the apex) is to the right of travel: a clockwise loop seen from above
+    let a = 0; for (let i = 0; i + 1 < c.length; i++) a += c[i].x * c[i + 1].y - c[i + 1].x * c[i].y;
+    expect(a).toBeLessThan(0);
+  });
+});

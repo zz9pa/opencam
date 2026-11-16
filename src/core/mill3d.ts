@@ -93,10 +93,21 @@ export interface RoughParams extends Mill3Common {
   stepdown: number;
   /** Stock left on the surface for the finishing pass, mm */
   leave: number;
+  /**
+   * Rest roughing: an earlier, bigger flat bit of this diameter has already roughed the model (with the same `leave`). Only the
+   * places it could not reach (tight corners and narrow slots) are cut now. Ignored if that bit is not bigger than this one.
+   */
+  rest?: number;
 }
 export interface FinishParams extends Mill3Common {
   /** Finish a second time along Y as well as X, so surfaces that run along the first passes (steep walls) are cut cleanly too */
   cross?: boolean;
+  /**
+   * Steep walls as contour lines (constant-height "waterline" passes). Where the surface is steeper than this angle (degrees from
+   * flat; 0 or unset = off) the raster passes stop and the bit follows level contours instead, which cuts a steep wall far cleaner than
+   * stepping across it. Contours are spaced `stepover` apart in height.
+   */
+  steep?: number;
 }
 
 export interface Mill3Result { toolpath: Toolpath; warnings: string[]; stats: { cells: number; cell: number; rows: number; unreachable: number } }
@@ -192,9 +203,19 @@ export function rough3d(model: Oriented, p: RoughParams): Mill3Result {
     if (zl <= zmin) { levels.push(zmin); break; }
     levels.push(zl);
   }
+  // rest roughing: the surface the bigger bit already cut down to (a cell is left for this bit where that bit stayed above the level)
+  let prevS: Float32Array | null = null;
+  if (p.rest && p.rest > 0) {
+    if (p.rest <= p.tool.diameter) warnings.push(`The earlier bit (${p.rest} mm) is not bigger than this ${p.tool.diameter} mm bit, so there is nothing to rest: the whole model is roughed.`);
+    else {
+      const big = toolSurface(hm, { ...p.tool, type: 'flat', diameter: p.rest + 2 * p.leave });
+      prevS = new Float32Array(big.length);
+      for (let k = 0; k < big.length; k++) prevS[k] = big[k] <= EMPTY ? EMPTY : big[k] - p.top + p.leave;
+    }
+  }
   let zPrev = 0;
   for (const z of levels) {
-    const ok = (i: number, j: number) => { const v = S[j * nx + i]; return v > EMPTY && v <= z + 1e-6; };
+    const ok = (i: number, j: number) => { const v = S[j * nx + i]; return v > EMPTY && v <= z + 1e-6 && (!prevS || prevS[j * nx + i] > z + 1e-6); };
     const rows: Row[] = js.map(j => ({ j, runs: rowRuns(nx, j, i => ok(i, j)) }));
     const extra: Row[] = [];
     for (let j = 0; j < ny; j++) {
@@ -272,6 +293,75 @@ export function finish3d(model: Oriented, p: FinishParams, tol = 0.01): Mill3Res
   return first;
 }
 
+/**
+ * Constant-height contours of the tool surface `S` at height `level`, over the grid squares in `squares` only (a square is
+ * [i, i+1] x [j, j+1] in cell-centre coordinates). Each contour is a list of points, ordered so that the higher ground is on
+ * the RIGHT of travel when `highRight`, else on the left. Closed contours repeat their first point at the end.
+ */
+export function contours(hm: HeightMap, S: Float32Array, squares: Int32Array, level: number, highRight: boolean, at: Pt): Pt[][] {
+  const { nx, cell } = hm;
+  // edges are numbered: horizontal edge from (i,j) to (i+1,j) = 2*(j*nx+i), vertical edge from (i,j) to (i,j+1) = 2*(j*nx+i)+1
+  const point = (e: number): Pt => {
+    const k = e >> 1, i = k % nx, j = (k - i) / nx;
+    const a = S[k] - level;
+    if (e & 1) { const b = S[k + nx] - level, t = a / (a - b); return { x: at.x + (i + 0.5) * cell, y: at.y + (j + 0.5 + t) * cell }; }
+    const b = S[k + 1] - level, t = a / (a - b);
+    return { x: at.x + (i + 0.5 + t) * cell, y: at.y + (j + 0.5) * cell };
+  };
+  const next = new Map<number, number>(), prevOf = new Map<number, number>();
+  const link = (from: number, to: number) => {
+    // orient the segment so that the higher ground is on the requested side
+    const a = point(from), b = point(to);
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1;
+    const e = cell * 0.25, rx = dy / l, ry = -dx / l;           // right-hand normal
+    const sample = (x: number, y: number) => {
+      const fi = (x - at.x) / cell - 0.5, fj = (y - at.y) / cell - 0.5;
+      const i = Math.max(0, Math.min(nx - 2, Math.floor(fi))), j = Math.max(0, Math.min(hm.ny - 2, Math.floor(fj)));
+      const u = Math.max(0, Math.min(1, fi - i)), v = Math.max(0, Math.min(1, fj - j)), k = j * nx + i;
+      return S[k] * (1 - u) * (1 - v) + S[k + 1] * u * (1 - v) + S[k + nx] * (1 - u) * v + S[k + nx + 1] * u * v;
+    };
+    const rightHigh = sample(mx + rx * e, my + ry * e) > sample(mx - rx * e, my - ry * e);
+    const fwd = rightHigh === highRight;
+    const [f, t] = fwd ? [from, to] : [to, from];
+    next.set(f, t); prevOf.set(t, f);
+  };
+  for (let q = 0; q < squares.length; q++) {
+    const k = squares[q];
+    const c0 = S[k] > level, c1 = S[k + 1] > level, c2 = S[k + nx + 1] > level, c3 = S[k + nx] > level;
+    const code = (c0 ? 1 : 0) | (c1 ? 2 : 0) | (c2 ? 4 : 0) | (c3 ? 8 : 0);
+    if (code === 0 || code === 15) continue;
+    const eB = 2 * k, eR = 2 * (k + 1) + 1, eT = 2 * (k + nx), eL = 2 * k + 1;   // bottom, right, top, left edges
+    switch (code) {
+      case 1: case 14: link(eL, eB); break;
+      case 2: case 13: link(eB, eR); break;
+      case 3: case 12: link(eL, eR); break;
+      case 4: case 11: link(eR, eT); break;
+      case 6: case 9: link(eB, eT); break;
+      case 7: case 8: link(eL, eT); break;
+      case 5: link(eL, eB); link(eR, eT); break;   // saddles: two separate segments
+      case 10: link(eB, eR); link(eL, eT); break;
+    }
+  }
+  const out: Pt[][] = [], seen = new Set<number>();
+  const walk = (start: number) => {
+    const pts: Pt[] = [];
+    let e = start;
+    for (let guard = 0; guard < 5_000_000; guard++) {
+      seen.add(e); pts.push(point(e));
+      const n = next.get(e);
+      if (n === undefined) break;
+      if (n === start) { pts.push(point(start)); break; }
+      if (seen.has(n)) break;
+      e = n;
+    }
+    if (pts.length > 1) out.push(pts);
+  };
+  for (const e of next.keys()) if (!prevOf.has(e) && !seen.has(e)) walk(e);   // open contours first, from their start
+  for (const e of next.keys()) if (!seen.has(e)) walk(e);                     // then the closed ones
+  return out;
+}
+
 function finishOnce(model: Oriented, p: FinishParams, tol: number): Mill3Result {
   const warnings: string[] = [];
   const rs0 = Math.max(1, Math.round(p.stepover / 0.35));
@@ -282,9 +372,25 @@ function finishOnce(model: Oriented, p: FinishParams, tol: number): Mill3Result 
   const stats = { cells: nx * ny, cell, rows: 0, unreachable: 0 };
   const rs = Math.max(1, Math.round(p.stepover / cell));
   const js = strideRows(ny, rs);
-  const cov = (i: number, j: number) => S[j * nx + i] > EMPTY;
+  // steep walls: the grid squares whose surface rises more than the limit, cut by contours instead of the raster
+  const steepCell = new Uint8Array(nx * ny);
+  const steepSquares: number[] = [];
+  let sLo = Infinity, sHi = -Infinity;
+  if (p.steep && p.steep > 0) {
+    const lim = Math.tan((Math.min(89, p.steep) * Math.PI) / 180) * cell;
+    for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+      const k = j * nx + i, a = S[k], b = S[k + 1], c = S[k + nx], d = S[k + nx + 1];
+      if (a <= EMPTY || b <= EMPTY || c <= EMPTY || d <= EMPTY) continue;
+      const hi = Math.max(a, b, c, d), lo = Math.min(a, b, c, d);
+      if (hi - lo < lim) continue;
+      steepSquares.push(k); steepCell[k] = steepCell[k + 1] = steepCell[k + nx] = steepCell[k + nx + 1] = 1;
+      if (lo < sLo) sLo = lo;
+      if (hi > sHi) sHi = hi;
+    }
+  }
+  const cov = (i: number, j: number) => S[j * nx + i] > EMPTY && !steepCell[j * nx + i];
   const rows: Row[] = js.map(j => ({ j, runs: rowRuns(nx, j, i => cov(i, j)) }));
-  if (!rows.some(r => r.runs.length)) return { toolpath: tp, warnings: ['The model has no surface to cut.'], stats };
+  if (!rows.some(r => r.runs.length) && !steepSquares.length) return { toolpath: tp, warnings: ['The model has no surface to cut.'], stats };
   const canLink = (i: number, j0: number, j1: number) => { for (let j = j0; j <= j1; j++) if (!cov(i, j)) return false; return true; };
   const zAt = (i: number, j: number) => S[j * nx + i] - p.top;
   for (const ch of chain(rows, p.zigzag, p.direction === 'conventional', canLink, 3 * rs)) {
@@ -311,6 +417,17 @@ function finishOnce(model: Oriented, p: FinishParams, tol: number): Mill3Result 
     let zlo = 0;
     for (const q of pts) if (q.z < zlo) zlo = q.z; // (a loop: spreading tens of thousands of points into Math.min overflows the call stack)
     tp.cuts.push(toCut(pts, zlo, 0));
+  }
+  if (steepSquares.length) {
+    const sq = Int32Array.from(steepSquares);
+    const step = Math.max(0.05, p.stepover);
+    for (let level = sHi - step / 2; level > sLo - step / 2; level -= step) {
+      const lv = Math.max(level, sLo + 1e-4);
+      for (const line of contours(hm, S, sq, lv, p.direction === 'climb', p.at)) {
+        const pts = simplify3(line.map(q => ({ x: q.x, y: q.y, z: lv - p.top })), tol);
+        if (pts.length >= 2) tp.cuts.push(toCut(pts, lv - p.top, 0));
+      }
+    }
   }
   // where the bit cannot get into the surface, stock is left standing above the model
   const left = cutSurface(hm, S, p.tool);

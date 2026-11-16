@@ -137,3 +137,56 @@ describe('DXF import', () => {
     expect(() => parseDxf('this is not a dxf')).toThrow();
   });
 });
+
+describe('DXF hatches', () => {
+  type P = [number, string | number][];
+  const HATCH_POLY = (pts: [number, number][], layer = 'H', bulges: number[] = []): P => [
+    [0, 'HATCH'], [8, layer], [2, 'SOLID'], [70, 1], [71, 0], [91, 1], [92, 7], [72, bulges.length ? 1 : 0], [73, 1], [93, pts.length],
+    ...pts.flatMap(([x, y], i) => [[10, x], [20, y], ...(bulges.length ? [[42, bulges[i]]] : [])] as P),
+    [97, 0], [75, 0], [76, 1], [98, 0],
+  ];
+  const HATCH_EDGES = (edges: P[]): P => [
+    [0, 'HATCH'], [8, 'E'], [2, 'SOLID'], [70, 1], [71, 0], [91, 1], [92, 1], [93, edges.length], ...edges.flat(), [97, 0], [75, 0], [76, 1], [98, 0],
+  ];
+  it('reads a polyline-bounded hatch as a closed outline', () => {
+    const r = parseDxf(dxf([HATCH_POLY([[0, 0], [20, 0], [20, 10], [0, 10]])], { units: 4 }));
+    expect(r.shapes.length).toBe(1);
+    expect(r.shapes[0].closed).toBe(true);
+    expect(area(r.shapes[0])).toBeCloseTo(200, 3);
+    expect(r.shapes[0].layer).toBe('H');
+    expect(r.notes.join(' ')).toMatch(/1 hatched area/);
+  });
+  it('reads a hatch bounded by lines and an arc', () => {
+    // a half disc of radius 10: arc from 0 to 180 degrees (counter-clockwise), closed by a line
+    const r = parseDxf(dxf([HATCH_EDGES([
+      [[72, 2], [10, 0], [20, 0], [40, 10], [50, 0], [51, 180], [73, 1]],
+      [[72, 1], [10, -10], [20, 0], [11, 10], [21, 0]],
+    ])], { units: 4 }));
+    expect(r.shapes.length).toBe(1);
+    expect(area(r.shapes[0])).toBeCloseTo(Math.PI * 100 / 2, 0);
+  });
+  it('bulged polyline boundaries give circles', () => {
+    // two bulge-1 half circles make a circle of diameter 20
+    const r = parseDxf(dxf([HATCH_POLY([[0, 0], [20, 0]], 'C', [1, 1])], { units: 4 }));
+    expect(area(r.shapes[0])).toBeCloseTo(Math.PI * 100, 0);
+  });
+  it('does not duplicate an outline that is already drawn (two identical loops would cancel out)', () => {
+    const box = (layer: string): P => [[0, 'LWPOLYLINE'], [8, layer], [90, 4], [70, 1], [10, 0], [20, 0], [10, 20], [20, 0], [10, 20], [20, 10], [10, 0], [20, 10]];
+    const r = parseDxf(dxf([box('A'), HATCH_POLY([[0, 0], [20, 0], [20, 10], [0, 10]])], { units: 4 }));
+    expect(r.shapes.length).toBe(1);
+    expect(r.notes.join(' ')).not.toMatch(/hatched area/);
+  });
+  it('a hatch inside a hole keeps it as a hole (nested loops are separate shapes)', () => {
+    const r = parseDxf(dxf([HATCH_POLY([[0, 0], [40, 0], [40, 40], [0, 40]]), HATCH_POLY([[10, 10], [30, 10], [30, 30], [10, 30]])], { units: 4 }));
+    expect(r.shapes.length).toBe(2);
+  });
+  it('spline-edged hatches are reported, not guessed', () => {
+    const r = parseDxf(dxf([HATCH_EDGES([[[72, 4], [94, 3], [73, 0], [74, 0], [95, 8], [96, 4]]])], { units: 4 }));
+    expect(r.shapes.length).toBe(0);
+    expect(r.notes.join(' ')).toMatch(/could not be read/);
+  });
+  it('inches are scaled', () => {
+    const r = parseDxf(dxf([HATCH_POLY([[0, 0], [1, 0], [1, 1], [0, 1]])], { units: 1 }));
+    expect(area(r.shapes[0])).toBeCloseTo(25.4 * 25.4, 2);
+  });
+});

@@ -2,6 +2,7 @@ import DxfParser from 'dxf-parser';
 import type { IDxf, IEntity, IPoint } from 'dxf-parser';
 import type { Loop, Pt } from '../core/types';
 import type { ParsedDrawing, RawShape, TextItem } from './shape';
+import { parseHatches } from './hatch';
 
 /** mm per drawing unit for the DXF $INSUNITS codes we understand. */
 const UNIT_MM: Record<number, [string, number]> = {
@@ -240,6 +241,28 @@ export function parseDxf(text: string, opts: { unitScale?: number } = {}): Parse
 
   for (const e of dxf.entities ?? []) handle(e as IEntity & Record<string, any>, IDENT, null, 0);
 
+  // hatched areas: the library skips them, so read their outlines here (unless the same outline is already drawn as a line)
+  const bbox = (pts: Pt[]) => ({ x0: Math.min(...pts.map(p => p.x)), x1: Math.max(...pts.map(p => p.x)), y0: Math.min(...pts.map(p => p.y)), y1: Math.max(...pts.map(p => p.y)) });
+  const area = (pts: Pt[]) => Math.abs(pts.reduce((acc, p, i) => { const q = pts[(i + 1) % pts.length]; return acc + p.x * q.y - q.x * p.y; }, 0) / 2);
+  let hatchLoops = 0, hatchBad = 0;
+  for (const h of parseHatches(text)) {
+    if (hiddenLayers.has(h.layer)) { skipped.hidden++; continue; }
+    hatchBad += h.unreadable;
+    for (const loop of h.loops) {
+      const t = loop.map(p => ({ x: p.x * scaleToMm, y: p.y * scaleToMm }));
+      const b = bbox(t), ar = area(t);
+      const dup = shapes.some(sh => {
+        if (!sh.closed) return false;
+        const c = bbox(sh.pts);
+        return Math.abs(c.x0 - b.x0) < 0.05 && Math.abs(c.x1 - b.x1) < 0.05 && Math.abs(c.y0 - b.y0) < 0.05 && Math.abs(c.y1 - b.y1) < 0.05 && Math.abs(area(sh.pts) - ar) <= 0.01 * Math.max(ar, 1e-9);
+      });
+      if (dup) continue;   // two identical outlines would cancel each other out
+      shapes.push({ layer: h.layer || '0', pts: t, closed: true });
+      hatchLoops++;
+    }
+  }
+  if (hatchLoops) notes.push(`${hatchLoops} hatched area(s) were read as outlines (a hatch pattern is not a cutting path).`);
+  if (hatchBad) notes.push(`${hatchBad} hatch boundary(ies) could not be read (spline edges are not supported) and were skipped.`);
   if (ignored['dimensions']) notes.push(`${ignored['dimensions']} dimension(s) were ignored.`);
   if (ignored['3D meshes']) notes.push(`${ignored['3D meshes']} 3D mesh(es) were ignored: only 2D lines are imported.`);
   for (const [k, v] of Object.entries(ignored)) if (!['text', 'dimensions', '3D meshes'].includes(k)) notes.push(`${v} ${String(k).replace(/[<>&"]/g, '')} were ignored.`);

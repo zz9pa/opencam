@@ -87,8 +87,8 @@ describe('arc fitting', () => {
   });
 });
 
-import { toGcode, arcTestGcode } from '../src/core/gcode';
-import { profile, drill } from '../src/core/ops';
+import { toGcode, arcTestGcode, MPCNC_MAKITA } from '../src/core/gcode';
+import { profile, drill, pocket } from '../src/core/ops';
 import { MATERIALS } from '../src/core/presets';
 import type { Loop } from '../src/core/types';
 
@@ -200,5 +200,43 @@ describe('feed follows how steeply a move descends', () => {
   });
   it('rounds so a sloping path does not need a new feed word on every line', () => {
     expect(moveFeed(1000, 300, 5, 1.37) % 25).toBe(0);
+  });
+});
+
+describe('helical arcs (a ramp round a circle)', () => {
+  const helix = (turns: number, dz: number, r = 10, n = 96): Pt3[] => Array.from({ length: Math.round(n * turns) + 1 }, (_, k) => {
+    const a = (2 * Math.PI * k) / n; return { x: 50 + r * Math.cos(a), y: 50 + r * Math.sin(a), z: -(dz * a) / (2 * Math.PI * turns) };
+  });
+  it('a descending spiral becomes arcs whose Z changes evenly', () => {
+    const p = helix(2, 4);
+    const segs = fitArcs(p, 0.01);
+    expect(segs.filter(s => s.arc).length).toBeGreaterThanOrEqual(3);          // a full turn is two half-turn arcs at most
+    expect(segs.length).toBeLessThan(p.length / 8);
+    expect(segs[segs.length - 1].to.z).toBeCloseTo(p[p.length - 1].z, 6);
+    // every original point is within the tolerance of the helix the arcs describe
+    const made: Pt3[] = [p[0]];
+    let at = p[0];
+    for (const sg of segs) {
+      if (!sg.arc) { made.push(sg.to); at = sg.to; continue; }
+      const xy = sampleArc(at, sg, 0.02);
+      xy.forEach((q, n) => made.push({ x: q.x, y: q.y, z: at.z + (sg.to.z - at.z) * (n / (xy.length - 1)) }));
+      at = sg.to;
+    }
+    for (const q of p) {
+      const d = Math.min(...made.map(m => Math.hypot(m.x - q.x, m.y - q.y, m.z - q.z)));
+      expect(d).toBeLessThan(0.03);
+    }
+  });
+  it('flat circles are still flat arcs (no Z word)', () => {
+    const flat = helix(1, 0);
+    const g = toGcode([{ name: 't', tool: { type: 'flat', diameter: 3 }, feed: 800, plungeFeed: 300, cuts: [{ loop: flat, z: 0, zStart: 0, closed: true, moves: flat }] }], { ...MPCNC_MAKITA, arcs: true });
+    expect(g).toMatch(/G[23] X\S+ Y\S+ I/);
+    expect(g).not.toMatch(/G[23] [^\n]* Z/);
+  });
+  it('a ramped hole is written as helical G2/G3 with a Z word', () => {
+    const tp = pocket([Array.from({ length: 64 }, (_, i) => ({ x: 30 * Math.cos(i / 10.185916), y: 30 * Math.sin(i / 10.185916) }))], { tool: { type: 'flat', diameter: 6 }, material: { feed: 800, plungeFeed: 300, stepdown: 4 }, depth: 4, direction: 'climb', ramp: { maxAngleDeg: 3 }, stepoverFraction: 0.5 });
+    const g = toGcode([tp], { ...MPCNC_MAKITA, arcs: true });
+    expect(g).toMatch(/G[23] X\S+ Y\S+ Z-2 I\S+ J\S+ F800/);   // a gentle ramp keeps the cutting feed
+    expect(g).toMatch(/G[23] X\S+ Y\S+ Z-4 I/);
   });
 });

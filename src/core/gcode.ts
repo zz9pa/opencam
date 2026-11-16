@@ -96,10 +96,12 @@ export function toGcode(paths: Toolpath[], post: Post = MPCNC_MAKITA): string {
         const m = item.to;
         const vertical = Math.hypot(m.x - prev.x, m.y - prev.y) < 1e-9;
         if (item.arc && !vertical) {
-          const fWordA = tp.feed !== lastF ? ` F${f(tp.feed)}` : '';
-          lastF = tp.feed;
+          const dzA = prev.z - m.z;   // a helix goes down (or up) while it turns: Z word, and plunge speed when descending
+          const feedA = dzA > 1e-9 ? moveFeed(tp.feed, tp.plungeFeed, item.arc.radius * item.arc.sweep, dzA) : tp.feed;
+          const fWordA = feedA !== lastF ? ` F${f(feedA)}` : '';
+          lastF = feedA;
           const g = (n: number) => String(+n.toFixed(post.decimals + 1)); // centre offsets a little finer than positions
-          out.push(`${item.arc.cw ? 'G2' : 'G3'} X${f(m.x)} Y${f(m.y)} I${g(item.arc.i)} J${g(item.arc.j)}${fWordA}`);
+          out.push(`${item.arc.cw ? 'G2' : 'G3'} X${f(m.x)} Y${f(m.y)}${Math.abs(dzA) > 1e-9 ? ` Z${f(m.z)}` : ''} I${g(item.arc.i)} J${g(item.arc.j)}${fWordA}`);
           prev = m;
           continue;
         }
