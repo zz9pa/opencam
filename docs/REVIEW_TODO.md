@@ -4,6 +4,9 @@ A read-through of the code (by Fable) was checked and actioned by Sonnet the sam
 
 ## Agreed and fixed
 
+- [x] **3D model saved in projects** (and undo steps, and the automatic backup), so opening a project no longer needs the STL loaded again.
+- [x] **Repository.** First commit made and pushed to github.com/zz9pa/Camfree.
+
 - [x] **Start depth** for outside/inside/pocket/on-line/drill: holes inside a pocket skip the air. **Hidden-tab simulation** no longer crawls (`nextTurn()` uses a message instead of animation frames when the tab is hidden).
 
 - [x] **Licence.** LGPL-3.0-or-later chosen by the owner: `COPYING.LESSER`, `COPYING`, `NOTICE.md` (also lists third-party licences; none of the dependencies is actually LGPL, all are permissive), `package.json` updated. Earlier text saying "some dependencies are LGPL" was wrong.
@@ -26,11 +29,10 @@ A read-through of the code (by Fable) was checked and actioned by Sonnet the sam
 
 ## Not done
 
-- [ ] **First commit.** The repository is initialised but empty; commit when ready.
 - [ ] **More UI logic into `core`.** Partly done: drill grouping (`planDrill`), zero/stock placement (`core/place.ts`) and the side-2 model turn (`turnOver`) are in `core` with tests. The rest of `compile()`, `compile3d()` and `placed()` in `src/main.ts` (reading the form, assembling the setups) is still untested.
 
 ## Still not checked
 
 - Two-sided simulation stock position: checked by reading the code (same translation for both sides, stock symmetric about the flip line); not looked at visually.
-- Split jobs with drill operations; 3D split jobs only checked as far as the segment files being produced.
+- Split jobs with drill or 3D operations: checked only as far as the segment files being produced (2 segments for a 66 mm part on a 60 mm bed); not simulated.
 - Anything on a real machine. In particular, run an air-cut first: climb/conventional just changed direction, and Marlin G0 output changed.

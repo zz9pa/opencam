@@ -262,7 +262,7 @@ The warnings list tells you when part of the surface is too fine for the chosen 
 
 **Carving both sides.** In a two-sided job (see *Turning the stock over*), set a 3D operation to **Side 2** and it carves the underside of the same model: the stock and the model are turned over together, so what was the bottom of the model becomes the surface you cut. Set the stock thickness in the two-sided settings; if the model is thinner than the stock, side 2 first removes the extra material above the model's underside. Leave the model attached to the stock (for example with tabs on the outline cut) until both sides are done, so it cannot move. The model must be a closed solid (a model that is only a surface has no underside to carve). 3D operations also work in split jobs: each segment carves its own part of the model.
 
-The model is not stored in a saved project. After opening a project that has 3D operations, load the same STL file again and they are recalculated.
+The model is saved inside the project file (and in the automatic backup), so opening a project brings the model back with its operations. A big model makes a big project file: about 50 bytes per triangle.
 
 Finishing with a flat bit leaves small steps on sloped surfaces: use a ball nose. Roughing leaves stair-steps up to one step-down high, which the finishing pass removes.
 ### Starting part way down

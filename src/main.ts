@@ -201,14 +201,14 @@ function syncVisibility() {
 }
 
 // ---------- 3D model ----------
-/** The loaded STL (as read) and the same model turned/scaled/placed for milling. Not stored in saved projects: load it again. */
+/** The loaded STL (as read) and the same model turned/scaled/placed for milling. Saved in projects and undo steps (`Snapshot.model`). */
 let stl: { name: string; mesh: Mesh } | null = null;
 let model: Oriented | null = null;
 let modelImg: HTMLCanvasElement | null = null;
 
 function compile3d(op: Op, tool: Tool, material: ReturnType<typeof currentMaterial>, msgs: string[]) {
   const s = op.s;
-  if (!model) { op.msgs = ['Load the 3D model (STL) to calculate this operation. Models are not stored in saved projects, so load the same file again.']; return; }
+  if (!model) { op.msgs = ['Load the 3D model (STL) to calculate this operation. Open the file in the 3D model panel.']; return; }
   if (!(s.diameter > 0)) { op.msgs = ['Enter a bit diameter.']; return; }
   if (s.ttype === 'vbit') { op.msgs = ['3D carving needs a flat or ball nose bit.']; return; }
   const m3 = s.m3;
@@ -1138,7 +1138,7 @@ inp('stlfile').addEventListener('change', async e => {
     rebuildModel();
     ops.filter(o => is3d(o.s.kind)).forEach(compile);
     if (first && !shapes.length) fit();
-    refreshUi(); draw();
+    refreshUi(); draw(); commit();
     say(`Loaded ${f.name}. Choose a flat bit for roughing or a ball nose for finishing, then use "Add 3D roughing" / "Add 3D finishing".`);
   } catch (err) {
     $('stlinfo').textContent = err instanceof StlError ? err.message : 'Could not read that file.';
@@ -1280,7 +1280,7 @@ function captureForm(): Record<string, string | boolean> {
 
 function snapshot(): Snapshot {
   return {
-    source: loadedFile, shapes, hidden: [...hidden],
+    source: loadedFile, model: stl ? { name: stl.name, tri: stl.mesh.tri } : null, shapes, hidden: [...hidden],
     ops: ops.map(o => ({ id: o.id, ids: [...o.ids], s: { ...o.s } as unknown as Record<string, unknown>, blank: o.blank })),
     nextOp, frontRef, backRef, form: captureForm(),
   };
@@ -1306,6 +1306,9 @@ function applySnapshot(s: Snapshot) {
       if (el.type === 'checkbox') el.checked = !!v; else el.value = String(v);
     }
     loadedFile = s.source;
+    // the same triangles are shared with the undo history, so keep the same object while the model is unchanged
+    if (s.model?.tri !== stl?.mesh.tri) stl = s.model ? { name: s.model.name, mesh: { tri: s.model.tri } } : null;
+    rebuildModel();
     shapes = s.shapes;
     hidden.clear(); s.hidden.forEach(h => hidden.add(h));
     // settings missing from an older project take the current panel values

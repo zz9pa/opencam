@@ -7,7 +7,7 @@ const shapes = (n = 2) => finalize(Array.from({ length: n }, (_, i) => ({
   pts: [{ x: i, y: 0 }, { x: i + 10.123456, y: 0 }, { x: i + 10, y: 5.55555 }],
 })));
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
-  source: { name: 'a.svg', text: '<svg/>' }, shapes: shapes(), hidden: ['B'],
+  source: { name: 'a.svg', text: '<svg/>' }, model: null, shapes: shapes(), hidden: ['B'],
   ops: [{ id: 1, ids: [0, 1], s: { kind: 'outside', depth: 12, tabs: true }, blank: [[{ x: 1, y: 2 }, { x: 3, y: 4 }, { x: 5, y: 6 }]] }],
   nextOp: 2, frontRef: 0, backRef: 1, form: { bedx: '600', ramp: true, flavor: 'marlin' }, ...over,
 });
@@ -103,5 +103,32 @@ describe('undo and redo history', () => {
     h.undo(); h.undo();
     expect(h.current!.nextOp).toBe(4);
     expect(h.canUndo).toBe(false);
+  });
+});
+
+describe('the 3D model in a project', () => {
+  const tri = Float32Array.from({ length: 9 * 500 }, (_, i) => Math.sin(i) * 100);
+  it('is saved in the file and comes back identical', () => {
+    const { snapshot } = projectToSnapshot(snapshotToProject(snap({ model: { name: 'body.stl', tri } })));
+    expect(snapshot.model!.name).toBe('body.stl');
+    expect(Array.from(snapshot.model!.tri)).toEqual(Array.from(tri));
+  });
+  it('a project without one opens with no model', () => {
+    expect(projectToSnapshot(snapshotToProject(snap())).snapshot.model).toBeNull();
+  });
+  it('is compared by identity, so undo history stays cheap', () => {
+    const m = { name: 'a', tri };
+    const sh = shapes();
+    expect(sameSnapshot(snap({ model: m, shapes: sh }), snap({ model: m, shapes: sh }))).toBe(true);
+    expect(sameSnapshot(snap({ model: m, shapes: sh }), snap({ model: { name: 'a', tri: tri.slice() }, shapes: sh }))).toBe(false);
+  });
+  it('a damaged model is refused with a plain message', () => {
+    const d = JSON.parse(snapshotToProject(snap({ model: { name: 'x', tri } })));
+    d.model.tri = btoa('not a whole number of triangles');
+    expect(() => projectToSnapshot(JSON.stringify(d))).toThrow(/3D model/);
+  });
+  it('handles a large model without overflowing the stack', () => {
+    const big = new Float32Array(9 * 200_000).fill(1.5);
+    expect(projectToSnapshot(snapshotToProject(snap({ model: { name: 'big', tri: big } }))).snapshot.model!.tri.length).toBe(big.length);
   });
 });
