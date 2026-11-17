@@ -26,6 +26,7 @@ import { zeroOffset, stockOffset } from './core/place';
 import { parseStl, orient, turnOver, heightMap, EMPTY, StlError, type Mesh, type Oriented, type Up } from './core/mesh';
 import { rough3d, finish3d } from './core/mill3d';
 import { unionAll, simplify as simplifyLoops } from './core/geometry';
+import { type ToolChange } from './core/gcode';
 import { toGcode, checkBounds, describeTool, arcTestGcode, estimateMinutes, type Flavor } from './core/gcode';
 import { MATERIALS, resolveMaterial, materialWarnings } from './core/presets';
 import { toolWarnings } from './core/tool';
@@ -678,7 +679,7 @@ function draw() {
   for (const s of shapes) {
     if (hidden.has(s.layer) || !inView(s)) continue;
     const isSel = selected.has(s.id);
-    ctx.strokeStyle = isSel ? '#e65100' : used.has(s.id) ? '#7a9fd6' : '#888';
+    ctx.strokeStyle = isSel ? '#d9560b' : used.has(s.id) ? '#6f9aa0' : '#7b837c';
     ctx.lineWidth = isSel ? 2.5 : 1;
     trace(s.pts, s.closed); ctx.stroke();
   }
@@ -691,7 +692,7 @@ function draw() {
     }
     if (!o.tp?.cuts.length) continue;
     if (is3d(o.s.kind)) { // many thin passes: draw them as one batch
-      ctx.save(); ctx.strokeStyle = sideOf(o) === 'back' ? (o.s.kind === 'rough3d' ? '#ab47bc' : '#6a1b9a') : o.s.kind === 'rough3d' ? '#ef6c00' : '#1565c0'; ctx.globalAlpha = o === active ? 0.95 : 0.55; ctx.lineWidth = 0.7; ctx.setLineDash([]);
+      ctx.save(); ctx.strokeStyle = sideOf(o) === 'back' ? (o.s.kind === 'rough3d' ? '#ab47bc' : '#6a1b9a') : o.s.kind === 'rough3d' ? '#ef6c00' : '#0e6b72'; ctx.globalAlpha = o === active ? 0.95 : 0.55; ctx.lineWidth = 0.7; ctx.setLineDash([]);
       ctx.beginPath();
       for (const c of o.tp.cuts) c.loop.forEach((p, i) => i ? ctx.lineTo(sx(p.x), sy(p.y)) : ctx.moveTo(sx(p.x), sy(p.y)));
       ctx.stroke(); ctx.restore();
@@ -710,14 +711,14 @@ function draw() {
     const last = o.tp.cuts[o.tp.cuts.length - 1].z;
     const tabTop = o.s.tabs ? -o.s.depth + o.s.tabh : null;
     const back = sideOf(o) === 'back';
-    ctx.strokeStyle = back ? (o === active ? '#4a148c' : '#8e24aa') : (o === active ? '#0d47a1' : '#1565c0');
+    ctx.strokeStyle = back ? (o === active ? '#4a148c' : '#8e24aa') : (o === active ? '#094b50' : '#0e6b72');
     ctx.setLineDash(back ? [6, 3] : []);
     ctx.lineWidth = o === active ? 2 : 1.2;
     for (const c of o.tp.cuts) {
       // V-carve passes sit at different depths along the skeleton, so draw all of them; other operations show the deepest pass.
       if (o.s.kind !== 'vcarve' && o.s.kind !== 'inlay' && o.s.kind !== 'inlayflat' && c.z !== last) continue;
       // inlay: the recess is blue, the insert (cut on a second, mirrored board) is purple and dashed
-      if (c.tag === 'male') { ctx.strokeStyle = '#8e24aa'; ctx.setLineDash([5, 3]); } else if (c.tag === 'female') { ctx.strokeStyle = '#1565c0'; ctx.setLineDash([]); }
+      if (c.tag === 'male') { ctx.strokeStyle = '#8e24aa'; ctx.setLineDash([5, 3]); } else if (c.tag === 'female') { ctx.strokeStyle = '#0e6b72'; ctx.setLineDash([]); }
       trace(c.loop, c.closed); ctx.stroke();
       if (tabTop !== null) {
         ctx.save(); ctx.strokeStyle = '#ffb300'; ctx.lineWidth = 5; ctx.lineCap = 'round';
@@ -764,7 +765,7 @@ function draw() {
     ctx.restore();
   }
   if (drag?.box && drag.moved) {
-    ctx.strokeStyle = '#1565c0'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
+    ctx.strokeStyle = '#0e6b72'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
     ctx.strokeRect(drag.x0, drag.y0, drag.x1 - drag.x0, drag.y1 - drag.y0); ctx.setLineDash([]);
   }
 }
@@ -1234,8 +1235,38 @@ $('arctest').addEventListener('click', () => {
 const startBox = $('startgcode') as HTMLTextAreaElement, endBox = $('endgcode') as HTMLTextAreaElement;
 const store = (() => { try { return localStorage; } catch { return undefined; } })();
 function machineNow(): MachineProfile {
-  return { flavor: sel('flavor').value as Flavor, arcs: sel('arcs').value === 'on', bedX: +inp('bedx').value, bedY: +inp('bedy').value, startGcode: startBox.value, endGcode: endBox.value };
+  return { flavor: sel('flavor').value as Flavor, arcs: sel('arcs').value === 'on', bedX: +inp('bedx').value, bedY: +inp('bedy').value, startGcode: startBox.value, endGcode: endBox.value, toolChange: readToolChange() };
 }
+/** The "Bit changes" form as G-code writer options. */
+function readToolChange(): ToolChange {
+  const mode = sel('tcmode').value as ToolChange['mode'];
+  const num = (id: string) => (inp(id).value.trim() === '' || !Number.isFinite(+inp(id).value) ? undefined : +inp(id).value);
+  const x = num('tcx'), y = num('tcy');
+  return {
+    mode, macro: (document.getElementById('tcmacro') as HTMLTextAreaElement).value, startMacro: (document.getElementById('tcstartmacro') as HTMLTextAreaElement).value, liftZ: num('tclift'), home: inp('tchome').checked, ...(x !== undefined && y !== undefined ? { x, y } : {}),
+    plate: num('tcplate'), probeDepth: num('tcdepth'), probeFeed: num('tcfeed'), probeAtStart: inp('tcstart').checked,
+    probeXY: inp('tcxy').checked, guided: inp('tcguided').checked, wallX: num('tcwallx'), wallY: num('tcwally'), xyTravel: num('tcreach'), xyLift: num('tcxylift'), backoff: num('tcback'),
+    dirX: +sel('tcdirx').value as -1 | 1, dirY: +sel('tcdiry').value as -1 | 1, zeroWith: sel('tczero').value as 'g92' | 'g10', probeCmd: sel('tcprobecmd').value as 'G38.2' | 'G38.3',
+  };
+}
+function writeToolChange(t: ToolChange) {
+  sel('tcmode').value = t.mode;
+  (document.getElementById('tcmacro') as HTMLTextAreaElement).value = t.macro ?? ''; (document.getElementById('tcstartmacro') as HTMLTextAreaElement).value = t.startMacro ?? '';
+  inp('tclift').value = String(t.liftZ ?? 30); inp('tchome').checked = !!t.home;
+  inp('tcx').value = t.x !== undefined ? String(t.x) : ''; inp('tcy').value = t.y !== undefined ? String(t.y) : '';
+  inp('tcplate').value = String(t.plate ?? 0); inp('tcdepth').value = String(t.probeDepth ?? 25); inp('tcfeed').value = String(t.probeFeed ?? 60); inp('tcstart').checked = !!t.probeAtStart;
+  inp('tcxy').checked = !!t.probeXY; inp('tcguided').checked = !!t.guided; inp('tcwallx').value = String(t.wallX ?? 10); inp('tcwally').value = String(t.wallY ?? 10); inp('tcreach').value = String(t.xyTravel ?? 20);
+  inp('tcxylift').value = String(t.xyLift ?? 2.5); inp('tcback').value = String(t.backoff ?? 3);
+  sel('tcdirx').value = String(t.dirX ?? -1); sel('tcdiry').value = String(t.dirY ?? -1); sel('tczero').value = t.zeroWith ?? 'g92'; sel('tcprobecmd').value = t.probeCmd ?? 'G38.2';
+}
+function syncToolChange() {
+  const m = sel('tcmode').value;
+  $('tcbox').classList.toggle('hidden', m === 'pause');
+  $('tcprobe').classList.toggle('hidden', m !== 'probe');
+  $('tcmacrolbl').classList.toggle('hidden', m !== 'custom');
+  $('tchomelbl').classList.toggle('hidden', sel('flavor').value !== 'marlin');
+}
+['tcmode', 'flavor'].forEach(id => $(id).addEventListener('input', syncToolChange));
 {
   const m = loadMachine(store);
   if (m.flavor) sel('flavor').value = m.flavor;
@@ -1245,6 +1276,8 @@ function machineNow(): MachineProfile {
   if (m.startGcode !== undefined) startBox.value = m.startGcode;
   if (m.endGcode !== undefined) endBox.value = m.endGcode;
   if (m.startGcode || m.endGcode) ($('customgcode') as HTMLDetailsElement).open = true;
+  if (m.toolChange) { writeToolChange(m.toolChange); if (m.toolChange.mode !== 'pause' || m.toolChange.startMacro) ($('toolchange') as HTMLDetailsElement).open = true; }
+  syncToolChange();
 }
 $('savemachine').addEventListener('click', () => {
   $('machinemsg').textContent = saveMachine(store, machineNow()) ? 'Saved. New projects in this browser start with these.' : 'The browser would not store it (private window or storage full).';
@@ -1255,7 +1288,7 @@ addEventListener('resize', draw);
 
 function download(paths: Toolpath[], name: string, note: string) {
   if (!paths.length) return;
-  const text = toGcode(paths, { flavor: sel('flavor').value as Flavor, spindle: 'manual', safeZ: 5, decimals: 3, arcs: sel('arcs').value === 'on', startGcode: startBox.value, endGcode: endBox.value })
+  const text = toGcode(paths, { flavor: sel('flavor').value as Flavor, spindle: 'manual', safeZ: 5, decimals: 3, arcs: sel('arcs').value === 'on', startGcode: startBox.value, endGcode: endBox.value, toolChange: readToolChange() })
     .replace(/; Units: mm, absolute\. Work zero:.*\n/, '; Units: mm, absolute.\n') // the notes below say where zero is; avoid a conflicting generic line
     .replace('\n', `\n${note.split('\n').map(l => '; ' + l).join('\n')}\n`);
   const a = document.createElement('a');
@@ -1495,6 +1528,10 @@ function nextTurn(): Promise<void> {
   return new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
 }
 
+/** When set, the simulation shows only this window of the stock, in fine detail. */
+let simWindow: { x0: number; y0: number; w: number; h: number } | null = null;
+function showSimButtons() { $('simwhole').classList.toggle('hidden', !simWindow); }
+
 async function runSim() {
   const my = ++simRun;
   const status = $('simstatus');
@@ -1509,7 +1546,10 @@ async function runSim() {
     const corner = zeroMode() === 'corner';
     stock = { x0: corner ? 0 : (b.minX + b.maxX) / 2 - w / 2, y0: corner ? 0 : (b.minY + b.maxY) / 2 - h / 2, w, h, t };
   } else stock = autoStock(src.paths, 5);
-  const g = createGrid(stock, 0.5);
+  // Detail view: only the window you were looking at, on a much finer grid. The whole-stock run already gave the warnings.
+  const whole = stock;
+  if (simWindow) stock = { ...simWindow, t: stock.t };
+  const g = createGrid(stock, simWindow ? 0.1 : 0.5);
   let done = 0;
   const entries = planEntries(src.paths);
   const total = src.paths.reduce((s, tp) => s + tp.cuts.reduce((q, c) => q + c.moves.length, 0), 0) || 1;
@@ -1524,7 +1564,11 @@ async function runSim() {
     done += last;
   }
   if (my !== simRun || !viewer) return;
-  viewer.setGrid(g);
+  viewer.setGrid(g, simWindow ? { keepView: true, bounds: whole } : {});
+  if (simWindow) {
+    status.innerHTML = `Detail view: ${Math.round(stock.w)} x ${Math.round(stock.h)} mm of the stock in ${+g.cell.toFixed(2)} mm cells. Only this area is drawn: to look somewhere else, move there (right-drag) and press <b>Sharpen this view</b> again. Collision and spoilboard checks are on the <b>Whole stock</b> run.`;
+    return;
+  }
   const warn = simSummary(g);
   status.innerHTML = `Stock ${Math.round(stock.w)} x ${Math.round(stock.h)} x ${+stock.t.toFixed(1)} mm${sel('simstock').value === 'auto' ? ' (automatic)' : ''}.` +
     (warn.length ? warn.map(w => `<div style="color:#b00020">${w}</div>`).join('') : ' <span style="color:#2e7d32">No problems found.</span>')
@@ -1539,12 +1583,15 @@ $('simbtn').addEventListener('click', () => {
   const oldCv = $<HTMLCanvasElement>('simcv'), freshCv = oldCv.cloneNode(false) as HTMLCanvasElement;
   oldCv.replaceWith(freshCv);
   try { viewer = new Viewer(freshCv); } catch (e) { $('simstatus').textContent = (e as Error).message; return; }
+  simWindow = null; showSimButtons();
   sel('simsel').innerHTML = srcs.map((s, i) => `<option value="${i}">${s.label}</option>`).join('');
   void runSim();
 });
-$('simclose').addEventListener('click', () => { simRun++; viewer?.dispose(); viewer = null; $('simdlg').classList.add('hidden'); });
-['simsel', 'simw', 'simh', 'simt'].forEach(id => $(id).addEventListener('change', () => void runSim()));
-sel('simstock').addEventListener('change', () => { $('simsize').classList.toggle('hidden', sel('simstock').value !== 'custom'); void runSim(); });
+$('simdetail').addEventListener('click', () => { if (!viewer) return; simWindow = viewer.viewRect(); showSimButtons(); void runSim(); });
+$('simwhole').addEventListener('click', () => { simWindow = null; showSimButtons(); void runSim(); });
+$('simclose').addEventListener('click', () => { simWindow = null; showSimButtons(); simRun++; viewer?.dispose(); viewer = null; $('simdlg').classList.add('hidden'); });
+['simsel', 'simw', 'simh', 'simt'].forEach(id => $(id).addEventListener('change', () => { simWindow = null; showSimButtons(); void runSim(); }));
+sel('simstock').addEventListener('change', () => { simWindow = null; showSimButtons(); $('simsize').classList.toggle('hidden', sel('simstock').value !== 'custom'); void runSim(); });
 sel('simz').addEventListener('change', () => viewer?.setZScale(+sel('simz').value));
 $('simtop').addEventListener('click', () => viewer?.setView('top'));
 $('simiso').addEventListener('click', () => viewer?.setView('iso'));

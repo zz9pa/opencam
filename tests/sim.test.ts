@@ -64,4 +64,12 @@ describe('the simulation checks the G-code entry drops', () => {
     for (const _ of simulateToolpath(g2, { ...t, cuts: [c2] }, 2000, new Map([[c2, -2]]))) void _; // claims -2 is clear; nothing was cut yet
     expect(g2.warnings.crashes.length).toBe(1);
   });
+  it('a detail window of a bigger job matches the same area of the whole run, and the cap allows large stock', () => {
+    const slot = tp([{ x: 10, y: 50, z: -3 }, { x: 90, y: 50, z: -3 }]);
+    const whole = createGrid(stock, 0.25), win = createGrid({ x0: 40, y0: 40, w: 20, h: 20, t: 10 }, 0.25);
+    run(whole, slot); run(win, slot);
+    for (const [x, y] of [[50, 50], [45, 52], [55, 54.5], [41, 41], [59, 59]]) expect(heightAt(win, x, y)).toBeCloseTo(heightAt(whole, x, y), 6);
+    // a guitar-sized stock keeps cells under 0.7 mm now
+    expect(createGrid({ x0: 0, y0: 0, w: 906, h: 1470, t: 40 }, 0.5).cell).toBeLessThan(0.7);
+  });
 });

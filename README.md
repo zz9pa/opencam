@@ -2,6 +2,7 @@
 
 A free, open-source, in-browser CAM tool: turn an SVG drawing into G-code for a hobby CNC router. Nothing is uploaded; it all runs on your computer.
 
+- **Use it online:** https://zz9pa.github.io/opencam/ (nothing to install; it is rebuilt from `main` automatically).
 - **Using it:** open the app and click *Help & guide*, or read [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
 - **Working on it:** read [docs/DEVELOPER.md](docs/DEVELOPER.md) (architecture, conventions, algorithms, testing, known limits). The original research and roadmap is in [PLAN.md](PLAN.md).
 

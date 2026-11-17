@@ -23,6 +23,63 @@ export interface Post {
   startGcode?: string;
   /** Your own end lines. When not blank they REPLACE the built-in "stop the router / go to X0 Y0 / M2" lines (they go after the final lift to safe Z). */
   endGcode?: string;
+  /** Help with bit changes; leave out for a plain pause. */
+  toolChange?: ToolChange;
+}
+
+/**
+ * What to do when the job needs another bit. A tool change on a router machine means taking the router out, changing the bit,
+ * putting it back and finding Z zero again, so the program can help with the awkward parts.
+ */
+export interface ToolChange {
+  /** 'pause': stop where it is (the plain behaviour). 'move': lift, go to a spot over the piece, stop. 'probe': as 'move', then find Z zero with a touch plate (G38.2). */
+  mode: 'pause' | 'move' | 'probe' | 'custom';
+  /**
+   * 'custom' mode: your own lines, run after the bit has been swapped (the router is still off). For any probe or routine the
+   * built-in 'probe' mode does not fit. Placeholders: {d} bit diameter, {r} bit radius, {plate}, {lift}, {safe} (all in mm).
+   */
+  macro?: string;
+  /** Your own lines run once at the start, BEFORE the router-start pause (so a live touch plate is safe). Same placeholders. Works in every mode. */
+  startMacro?: string;
+  /** Lift to this Z (work coordinates) before anything else, so the router can be lifted out, mm. Default 30. */
+  liftZ?: number;
+  /** Re-home X and Y to the stops (G28 X Y) before going to the spot. Marlin only, and only right if the stops are where your work X/Y zero is. */
+  home?: boolean;
+  /** The spot (work coordinates) to go to for the change / for Z zero. Leave both out to use the start of the next cut. */
+  x?: number; y?: number;
+  /** Probe mode: thickness of the touch plate (zero if the bit touches the material itself), mm. Z is set to this where the bit stops. */
+  plate?: number;
+  /** Probe mode: how far below Z zero the bit may travel looking for the plate, mm. Default 25. */
+  probeDepth?: number;
+  /** Probe mode: probing speed, mm/min. Default 60. */
+  probeFeed?: number;
+  /** Probe mode: also find Z zero at the very start of the job (the first bit is already fitted). */
+  probeAtStart?: boolean;
+  /** With probeAtStart: also find X and Y zero by touching two walls with the side of the bit (see wallX, wallY, dirX, dirY). The bit is jogged into position first. */
+  probeXY?: boolean;
+  /** Where the X wall is, measured from the zero you want X to become (the workpiece corner), mm. Signed. The bit radius is added for you. Default 10. */
+  wallX?: number;
+  /** The same for the Y wall. Default 10. */
+  wallY?: number;
+  /** Which way the bit moves to reach the X wall: -1 (towards lower X, so the wall is at lower X than the bit) or 1. Default -1. */
+  dirX?: -1 | 1;
+  /** The same for Y. Default -1. */
+  dirY?: -1 | 1;
+  /** How far the bit may travel sideways looking for a wall, mm. Default 20. */
+  xyTravel?: number;
+  /**
+   * Guided (start-of-job probing with `probeXY`): instead of one jogged position and a fixed route, the program stops before each
+   * touch so YOU move the bit: beside the X face, then beside the Y face, then over the plate for Z. The order is X, Y, Z.
+   */
+  guided?: boolean;
+  /** Before touching the walls the bit rises this far above where Z was found, mm. Default 2.5. */
+  xyLift?: number;
+  /** After touching a wall the bit backs off this far, mm. Default 3. */
+  backoff?: number;
+  /** How a position is declared: G92 (default, Marlin and GRBL) or 'g10' for G10 L20 P1 (the GRBL / LinuxCNC way). */
+  zeroWith?: 'g92' | 'g10';
+  /** The probing command: G38.2 (default: error if nothing is touched) or G38.3 (no error). */
+  probeCmd?: 'G38.2' | 'G38.3';
 }
 
 const customLines = (s?: string) => (s ?? '').replace(/\r/g, '').split('\n').map(l => l.trimEnd()).filter(l => l.trim() !== '');
@@ -67,21 +124,100 @@ export function toGcode(paths: Toolpath[], post: Post = MPCNC_MAKITA): string {
     ...(post.arcs ? ['; Uses G2/G3 arcs: your firmware must support them (run the arc test file first).'] : []),
     'G21', 'G90', 'G17',
   ];
+  let lastF = -1;
+  // Fast moves: Marlin needs the feed stated (see Post.rapidFeed), and that changes the modal feed, so the next G1 restates its own.
+  const g0 = (s: string) => { if (post.flavor === 'marlin') { lastF = -1; return `G0 ${s} F${f(rapidFeed)}`; } return `G0 ${s}`; };
+  const say = (t: string) => (post.flavor === 'marlin' ? [`M117 ${t.slice(0, 40)}`] : []);
+  const tc = post.toolChange;
+  const firstMove = (tp: Toolpath) => tp.cuts.find(c => c.moves.length)?.moves[0];
+  /** Your own lines with the placeholders filled in for the bit about to be used. */
+  const fill = (text: string | undefined, tool: Toolpath['tool']) => customLines(text).map(l => l
+    .replace(/\{d\}/g, f(tool.diameter)).replace(/\{r\}/g, f(tool.diameter / 2))
+    .replace(/\{plate\}/g, f(tc?.plate ?? 0)).replace(/\{lift\}/g, f(Math.max(tc?.liftZ ?? 30, post.safeZ))).replace(/\{safe\}/g, f(post.safeZ)));
+  const probe = tc?.probeCmd === 'G38.3' ? 'G38.3' : 'G38.2';
+  /** Declare the current position of some axes: "X13", "X0 Y0" ... */
+  const declare = (words: string, note = '') => (tc?.zeroWith === 'g10' ? `G10 L20 P1 ${words}` : `G92 ${words}`) + (note ? ` ; ${note}` : '');
+  const probeZ = () => [
+    `${probe} Z${f(-(tc?.probeDepth ?? 25))} F${f(tc?.probeFeed ?? 60)}`, declare(`Z${f(tc?.plate ?? 0)}`, "the bit is on the plate: Z is the plate's thickness"),
+  ];
+  /** The lift / go-to-the-spot / (probe) steps. `change`: a bit has to be swapped first (stop for it). */
+  const changeSteps = (next: Toolpath, change: boolean) => {
+    const L: string[] = [];
+    const lift = Math.max(tc?.liftZ ?? 30, post.safeZ), mode = tc?.mode ?? 'pause';
+    L.push(g0(`Z${f(lift)}`));
+    if (tc?.home && post.flavor === 'marlin') L.push('G28 X Y ; re-home X and Y on the stops (needs X/Y zero to be at the stops)');
+    const m = firstMove(next);
+    const spot = tc?.x !== undefined && tc?.y !== undefined ? { x: tc.x, y: tc.y } : m ? { x: m.x, y: m.y } : null;
+    if (spot) L.push(g0(`X${f(spot.x)} Y${f(spot.y)}`));
+    if (change) {
+      L.push(`; CHANGE BIT to ${describeTool(next.tool)}${mode === 'probe' || mode === 'custom' ? ': Z zero is found with the touch plate afterwards' : ' and set Z zero on top of the material'}`, ...say(`Change bit: ${describeTool(next.tool)}`));
+      L.push(mode === 'probe' || mode === 'custom' ? 'M0 ; change the bit, refit the router (leave it OFF), set up your touch plate, then resume' : 'M0');
+    }
+    if (mode === 'custom') {
+      const mine = fill(tc?.macro, next.tool);
+      L.push('; --- your zeroing G-code ---', ...mine, '; --- end of your zeroing G-code ---', ...say('Start the router'), 'M0 ; switch the router on, then resume');
+    }
+    if (mode === 'probe') {
+      const plate = tc?.plate ?? 0;
+      L.push('; finding Z zero: the bit lowers until it touches the plate', ...probeZ(), g0(`Z${f(lift)}`),
+        ...say(plate > 0 ? 'Remove plate, start router' : 'Start the router'),
+        plate > 0 ? 'M0 ; remove the touch plate, switch the router on, then resume' : 'M0 ; switch the router on, then resume');
+    }
+    return L;
+  };
+  /**
+   * At the start: find Z (and optionally X and Y) with the touch plate. The router is still OFF here (the plate is live copper),
+   * and the bit was jogged by hand into the plate's recess. X/Y probing sets zero at the workpiece corner: the recess walls are
+   * `wall` mm in from the plate's corner, the bit touches a wall with its side, so its centre is `wall` plus its radius away.
+   */
+  const startProbe = (first: Toolpath) => {
+    const feed = f(tc?.probeFeed ?? 60), plate = tc?.plate ?? 0, lift = Math.max(tc?.liftZ ?? 30, post.safeZ);
+    if (tc?.guided && tc.probeXY && first.tool.type !== 'vbit') {
+      const r = first.tool.diameter / 2, travel = tc.xyTravel ?? 20, back = tc.backoff ?? 3;
+      const dx = tc.dirX === 1 ? 1 : -1, dy = tc.dirY === 1 ? 1 : -1;
+      const wx = tc.wallX ?? 10, wy = tc.wallY ?? 10, ax = wx - dx * r, ay = wy - dy * r;
+      const side = (ax_: string, d: number) => `${d > 0 ? 'lower' : 'higher'} ${ax_}`;
+      const G: string[] = ['; Guided zeroing, router OFF. The program stops before each touch so you can move the bit.'];
+      const pause = (msg: string, comment: string) => G.push(...say(msg), `M0 ; ${comment}`);
+      pause('Jog bit beside X face', `jog the bit to the ${side('X', dx)} side of the plate, at a height where its side meets the plate, then resume`);
+      G.push(declare('X0'), `${probe} X${f(dx * travel)} F${feed}`, declare(`X${f(ax)}`, `touching the plate face at X ${f(wx)}: bit radius ${f(r)}`), g0(`X${f(ax - dx * back)}`));
+      pause('Jog bit beside Y face', `jog the bit to the ${side('Y', dy)} side of the plate, clear of it, at the same kind of height, then resume`);
+      G.push(declare('Y0'), `${probe} Y${f(dy * travel)} F${feed}`, declare(`Y${f(ay)}`, `touching the plate face at Y ${f(wy)}: bit radius ${f(r)}`), g0(`Y${f(ay - dy * back)}`));
+      pause('Jog bit over the plate', 'jog the bit over the plate, a few mm above it, then resume');
+      G.push(declare('Z0', 'the bit height now counts as 0 for the probe'), ...probeZ(), g0(`Z${f(lift)}`), ...say('Remove the touch plate'), 'M0 ; remove the touch plate, then resume');
+      return G;
+    }
+    const L = ['; Before starting: the router is OFF. Jog the bit into the plate recess, a few mm above its floor and clear of the walls.',
+      declare('Z0', 'the bit height now counts as 0 for the probe'), ...probeZ()];
+    if (tc?.probeXY && first.tool.type !== 'vbit') {
+      const r = first.tool.diameter / 2, travel = tc.xyTravel ?? 20, back = tc.backoff ?? 3;
+      const dx = tc.dirX === 1 ? 1 : -1, dy = tc.dirY === 1 ? 1 : -1;
+      const wx = tc.wallX ?? 10, wy = tc.wallY ?? 10;
+      const ax = wx - dx * r, ay = wy - dy * r; // the bit is on the open side of the wall, one radius away from it
+      L.push(g0(`Z${f(plate + (tc.xyLift ?? 2.5))}`), `; X and Y: the bit's side touches a wall at X ${f(wx)} and one at Y ${f(wy)} (bit radius ${f(r)})`,
+        declare('X0 Y0'), `${probe} X${f(dx * travel)} F${feed}`, declare(`X${f(ax)}`), g0(`X${f(ax - dx * back)}`),
+        `${probe} Y${f(dy * travel)} F${feed}`, declare(`Y${f(ay)}`), g0(`Y${f(ay - dy * back)}`));
+    } else if (tc?.probeXY) L.push('; (X/Y probing is skipped for a V-bit: its side is not a reliable edge)');
+    L.push(g0(`Z${f(lift)}`), ...say('Remove the touch plate'), 'M0 ; remove the touch plate, then resume');
+    return L;
+  };
+  if (tc?.mode === 'probe' && tc.probeAtStart && paths.length) out.push('; --- find zero with the touch plate ---', ...startProbe(paths[0]));
+  if (customLines(tc?.startMacro).length && paths.length) out.push('; --- your zeroing G-code (router still off) ---', ...fill(tc?.startMacro, paths[0].tool), '; --- end of your zeroing G-code ---');
   const startLines = customLines(post.startGcode);
   if (startLines.length) out.push('; --- your start G-code ---', ...startLines, '; --- end of your start G-code ---');
   else if (post.spindle === 'm3') out.push(`M3 S${post.spindleRpm ?? 10000}`);
   else if (post.flavor === 'marlin') out.push('M117 Start the router', 'M0 ; start the router, then resume');
   else out.push('; Start the router now, then cycle start', 'M0');
-  let lastF = -1;
-  // Fast moves: Marlin needs the feed stated (see Post.rapidFeed), and that changes the modal feed, so the next G1 restates its own.
-  const g0 = (s: string) => { if (post.flavor === 'marlin') { lastF = -1; return `G0 ${s} F${f(rapidFeed)}`; } return `G0 ${s}`; };
   out.push(g0(`Z${f(post.safeZ)}`));
   let prevTool: Toolpath['tool'] | null = null;
   for (const tp of paths) {
     if (prevTool && !sameTool(prevTool, tp.tool)) {
-      out.push(g0(`Z${f(post.safeZ)}`), `; CHANGE BIT to ${describeTool(tp.tool)} and set Z zero on top of the material`);
-      if (post.flavor === 'marlin') out.push(`M117 Change bit: ${describeTool(tp.tool)}`);
-      out.push('M0');
+      if (tc && tc.mode !== 'pause') out.push('; --- tool change ---', ...changeSteps(tp, true));
+      else {
+        out.push(g0(`Z${f(post.safeZ)}`), `; CHANGE BIT to ${describeTool(tp.tool)} and set Z zero on top of the material`);
+        if (post.flavor === 'marlin') out.push(`M117 Change bit: ${describeTool(tp.tool)}`);
+        out.push('M0');
+      }
     }
     prevTool = tp.tool;
     out.push(`; --- ${tp.name} (${tp.tool.type} ${tp.tool.diameter}mm) ---`);

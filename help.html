@@ -5,33 +5,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>open-cam help</title>
 <style>
-  :root { --accent: #1565c0; --line: #e1e4e8; --muted: #5b6370; }
+  :root { --accent: #0e6b72; --accent-tint: #dcecec; --line: #cdd0c9; --muted: #5f6a72; --ink: #1e2429; --steel: #2c353c; --plate: #eceeea; --paper: #f8f8f5; --font: "Bahnschrift", "DIN Alternate", "Segoe UI", system-ui, sans-serif; }
   * { box-sizing: border-box; }
-  body { font: 16px/1.6 system-ui, sans-serif; margin: 0; color: #1f2328; }
-  header { position: sticky; top: 0; z-index: 5; background: #fff; border-bottom: 1px solid var(--line); display: flex; gap: 16px; align-items: center; padding: 10px 20px; }
+  body { font: 16px/1.6 var(--font); margin: 0; color: var(--ink); background: var(--paper); }
+  header { position: sticky; top: 0; z-index: 5; background: var(--steel); color: #fff; border-bottom: 3px solid #d9560b; display: flex; gap: 16px; align-items: center; padding: 10px 20px; }
   header .title { font-weight: 700; font-size: 18px; white-space: nowrap; }
-  header a { color: var(--accent); text-decoration: none; white-space: nowrap; }
-  #q { flex: 1; max-width: 460px; padding: 8px 12px; font-size: 15px; border: 1px solid #c8ccd1; border-radius: 6px; }
+  header a { color: #cfe6e8; text-decoration: none; white-space: nowrap; }
+  #q { flex: 1; max-width: 460px; padding: 8px 12px; font: inherit; font-size: 15px; border: 1px solid #5f6a72; border-radius: 3px; background: #fff; color: var(--ink); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  header :focus-visible { outline-color: #fff; }
   .layout { display: flex; max-width: 1180px; margin: 0 auto; }
-  nav { width: 270px; flex: none; position: sticky; top: 57px; align-self: flex-start; max-height: calc(100vh - 57px); overflow: auto; padding: 16px 12px 40px 20px; font-size: 14px; }
-  nav a { display: block; color: #3b434b; text-decoration: none; padding: 3px 8px; border-radius: 4px; border-left: 2px solid transparent; }
+  nav { width: 270px; flex: none; position: sticky; top: 61px; align-self: flex-start; max-height: calc(100vh - 61px); overflow: auto; padding: 16px 12px 40px 20px; font-size: 14px; }
+  nav a { display: block; color: #3b434b; text-decoration: none; padding: 3px 8px; border-radius: 3px; border-left: 3px solid transparent; }
   nav a.sub { padding-left: 22px; color: var(--muted); font-size: 13.5px; }
-  nav a:hover { background: #f1f3f5; }
-  nav a.active { border-left-color: var(--accent); background: #eaf2fc; color: #0b3d80; }
-  main { flex: 1; min-width: 0; padding: 8px 28px 120px; }
-  main h1 { font-size: 30px; margin-top: 18px; }
-  main h2 { margin-top: 42px; padding-bottom: 6px; border-bottom: 1px solid var(--line); scroll-margin-top: 70px; }
-  main h3 { margin-top: 28px; scroll-margin-top: 70px; }
+  nav a:hover { background: var(--plate); }
+  nav a.active { border-left-color: var(--accent); background: var(--accent-tint); color: #094b50; }
+  main { flex: 1; min-width: 0; padding: 8px 28px 120px; max-width: 860px; }
+  main h1 { font-size: 32px; margin-top: 18px; letter-spacing: -0.01em; }
+  main h2 { margin-top: 42px; padding-bottom: 6px; border-bottom: 2px solid var(--steel); scroll-margin-top: 80px; letter-spacing: -0.005em; }
+  main h3 { margin-top: 28px; scroll-margin-top: 80px; color: var(--steel); }
   table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14.5px; display: block; overflow-x: auto; }
   th, td { border: 1px solid var(--line); padding: 7px 11px; vertical-align: top; text-align: left; }
-  th { background: #f6f8fa; }
-  code { background: #f1f3f5; padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+  th { background: var(--plate); }
+  code { background: var(--plate); padding: 1px 5px; border-radius: 3px; font-size: 0.92em; }
   a { color: var(--accent); }
-  mark { background: #fff2a8; }
-  #results { position: absolute; top: 52px; left: 150px; width: min(560px, 90vw); background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 30px #0003; max-height: 70vh; overflow: auto; display: none; }
-  #results a { display: block; padding: 10px 14px; text-decoration: none; color: inherit; border-bottom: 1px solid #f0f0f0; }
-  #results a:hover { background: #f1f6fd; }
-  #results b { display: block; color: #0b3d80; }
+  mark { background: #ffe6a8; }
+  blockquote { margin: 14px 0; padding: 4px 14px; border-left: 4px solid var(--accent); background: var(--accent-tint); }
+  #results { position: absolute; top: 56px; left: 150px; width: min(560px, 90vw); background: #fff; border: 1px solid var(--line); border-radius: 3px; box-shadow: 0 8px 30px #0003; max-height: 70vh; overflow: auto; display: none; }
+  #results a { display: block; padding: 10px 14px; text-decoration: none; color: inherit; border-bottom: 1px solid #eceeea; }
+  #results a:hover { background: var(--accent-tint); }
+  #results b { display: block; color: #094b50; }
   #results small { color: var(--muted); }
   .embed header, .embed nav { display: none; }
   .embed main { padding: 4px 16px 80px; }

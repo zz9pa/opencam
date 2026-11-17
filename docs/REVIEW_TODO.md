@@ -11,7 +11,7 @@ A read-through of the code (by Fable) was checked and actioned by Sonnet the sam
 - [x] **New since the review:** 3D finishing in both directions (cross pass), lead-in/lead-out on cut-outs, flat-bottom inlay.
 
 - [x] **3D model saved in projects** (and undo steps, and the automatic backup), so opening a project no longer needs the STL loaded again.
-- [x] **Repository.** First commit made and pushed to github.com/zz9pa/Camfree.
+- [x] **Repository.** First commit made and pushed to github.com/zz9pa/opencam.
 
 - [x] **Start depth** for outside/inside/pocket/on-line/drill: holes inside a pocket skip the air. **Hidden-tab simulation** no longer crawls (`nextTurn()` uses a message instead of animation frames when the tab is hidden).
 

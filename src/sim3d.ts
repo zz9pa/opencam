@@ -33,6 +33,7 @@ export class Viewer {
   private yaw = -Math.PI / 3; private pitch = 0.65; private dist = 200; private target = [0, 0, 0];
   private zScale = 1; private dirty = true; private dead = false;
   private size = { w: 100, h: 100, t: 10 };
+  private stockRect = { x0: 0, y0: 0, w: 100, h: 100 };
 
   constructor(private canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2');
@@ -66,6 +67,14 @@ export class Viewer {
     requestAnimationFrame(loop);
   }
 
+  /** The part of the stock you are looking at, roughly: a square around the point the camera looks at, as tall as the view, kept inside the stock. */
+  viewRect(): { x0: number; y0: number; w: number; h: number } {
+    const half = this.dist * Math.tan(0.35) * 1.1, s = this.stockRect;
+    const x0 = Math.max(s.x0, this.target[0] - half), x1 = Math.min(s.x0 + s.w, this.target[0] + half);
+    const y0 = Math.max(s.y0, this.target[1] - half), y1 = Math.min(s.y0 + s.h, this.target[1] + half);
+    return { x0, y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
+  }
+
   setZScale(k: number) { this.zScale = k; this.dirty = true; }
 
   /** 'top' looks straight down with +Y up the screen; 'iso' is a three-quarter view; 'front' looks along +Y. */
@@ -82,9 +91,9 @@ export class Viewer {
   private free() { for (const b of this.buffers) this.gl.deleteBuffer(b); this.buffers = []; if (this.vao) this.gl.deleteVertexArray(this.vao); this.vao = null; }
 
   /** Build the picture from a simulated grid (heights are pooled to a few hundred thousand cells at most). */
-  setGrid(g: SimGrid) {
+  setGrid(g: SimGrid, opt: { keepView?: boolean; bounds?: { x0: number; y0: number; w: number; h: number } } = {}) {
     const { nx, ny, cell, z, stock } = g;
-    const k = Math.max(1, Math.ceil(Math.sqrt((nx * ny) / 300000)));
+    const k = Math.max(1, Math.ceil(Math.sqrt((nx * ny) / 1000000)));
     const mx = Math.ceil(nx / k), my = Math.ceil(ny / k);
     const H = new Float32Array(mx * my);
     for (let j = 0; j < my; j++) for (let i = 0; i < mx; i++) {
@@ -131,6 +140,8 @@ export class Viewer {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(idx), gl.STATIC_DRAW);
     this.count = idx.length;
     this.size = { w: stock.w, h: stock.h, t };
+    this.stockRect = opt.bounds ?? { x0: stock.x0, y0: stock.y0, w: stock.w, h: stock.h };
+    if (opt.keepView) { this.dirty = true; return; } // sharpening in place: the camera stays where the user put it
     this.target = [stock.x0 + stock.w / 2, stock.y0 + stock.h / 2, -t / 2];
     this.setView('iso');
   }
@@ -140,7 +151,7 @@ export class Viewer {
     const dpr = devicePixelRatio || 1, w = Math.max(1, Math.floor(c.clientWidth * dpr)), h = Math.max(1, Math.floor(c.clientHeight * dpr));
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
     gl.viewport(0, 0, w, h);
-    gl.clearColor(0.93, 0.94, 0.96, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.clearColor(0.973, 0.973, 0.961, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     if (!this.vao || !this.count) return;
     gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
     const cp = Math.cos(this.pitch), eye = [this.target[0] + this.dist * cp * Math.cos(this.yaw), this.target[1] + this.dist * cp * Math.sin(this.yaw), this.target[2] * this.zScale + this.dist * Math.sin(this.pitch)];

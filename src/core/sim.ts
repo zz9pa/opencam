@@ -18,7 +18,7 @@ export interface SimWarnings {
   outside: number;
 }
 
-export const SIM_MAX_CELLS = 1_500_000;
+export const SIM_MAX_CELLS = 4_000_000;
 
 export function createGrid(stock: Stock, cell: number): SimGrid {
   let c = Math.max(cell, 0.05);
@@ -27,7 +27,7 @@ export function createGrid(stock: Stock, cell: number): SimGrid {
   return { stock, nx, ny, cell: c, z: new Float32Array(nx * ny), warnings: { crashes: [], belowBottom: 0, outside: 0 } };
 }
 
-interface Kernel { di: Int32Array; dj: Int32Array; prof: Float32Array }
+interface Kernel { di: Int32Array; dj: Int32Array; prof: Float32Array; rc: number }
 const kernels = new Map<string, Kernel>();
 
 /** Offsets and heights of the bit's shape above its tip, for each grid cell under the bit. */
@@ -48,7 +48,7 @@ function kernelFor(tool: Tool, cell: number): Kernel {
     else if (tool.type === 'vbit') p = Math.max(0, dd - tipR) / half;
     di.push(a); dj.push(b); pr.push(p);
   }
-  const k = { di: Int32Array.from(di), dj: Int32Array.from(dj), prof: Float32Array.from(pr) };
+  const k = { di: Int32Array.from(di), dj: Int32Array.from(dj), prof: Float32Array.from(pr), rc };
   kernels.set(key, k);
   return k;
 }
@@ -58,6 +58,8 @@ function stamp(g: SimGrid, k: Kernel, x: number, y: number, z: number) {
   const ci = Math.floor((x - stock.x0) / cell), cj = Math.floor((y - stock.y0) / cell);
   const floor = -stock.t;
   if (z < floor - 1e-6) g.warnings.belowBottom = Math.max(g.warnings.belowBottom, floor - z);
+  // a bit centred well outside the grid (a detail window of a bigger job) cannot touch it: skip the whole stamp
+  if (ci < -k.rc || cj < -k.rc || ci >= nx + k.rc || cj >= ny + k.rc) { g.warnings.outside++; return; }
   let touched = false;
   for (let n = 0; n < k.di.length; n++) {
     const i = ci + k.di[n], j = cj + k.dj[n];

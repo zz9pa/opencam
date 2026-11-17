@@ -122,6 +122,62 @@
   </label>
   <div id="arcinfo" style="background:#fff8e1;padding:6px 8px;margin:4px 0;font-size:13px"></div>
   <button id="arctest" title="A harmless air-cut program: the tool stays 10 mm above zero">Download arc test file (air cut)</button>
+  <details id="toolchange">
+    <summary>Bit changes (needs more than one bit in the job)</summary>
+    <label>When the job needs another bit
+      <select id="tcmode">
+        <option value="pause">Just pause where it is</option>
+        <option value="move">Lift, go to a spot over the piece, then pause</option>
+        <option value="probe">Lift, go to a spot, pause, then find Z zero with a touch plate</option>
+        <option value="custom">Lift, go to a spot, pause, then run my own G-code</option>
+      </select>
+    </label>
+    <label>My zeroing G-code at the start of the job (router still off)
+      <textarea id="tcstartmacro" rows="4" spellcheck="false" placeholder="Optional. Runs once before the router start pause. Example: G38.2 Z-25 F60 then G92 Z5 (placeholders: {d} bit diameter, {r} radius, {plate}, {lift}, {safe})"></textarea>
+    </label>
+    <div id="tcbox" class="hidden">
+      <div class="row">
+        <label>Lift to Z (mm)<input id="tclift" type="number" value="30" min="0" step="5" /></label>
+        <label id="tchomelbl" class="check"><input type="checkbox" id="tchome" /> Re-home X/Y on the stops first</label>
+      </div>
+      <div class="row">
+        <label>Spot X (mm)<input id="tcx" type="number" placeholder="next cut" /></label>
+        <label>Spot Y (mm)<input id="tcy" type="number" placeholder="next cut" /></label>
+      </div>
+      <small>Leave the spot blank to use the start of the next cut. Pick a place over the material (or over the plate) where the bit can reach it. Coordinates are in the job's own X/Y, so after a re-home they need X/Y zero to be where the stops are.</small>
+      <label id="tcmacrolbl" class="hidden">My G-code after each bit change (router still off)
+        <textarea id="tcmacro" rows="5" spellcheck="false" placeholder="Runs after you have swapped the bit, then the program asks you to start the router. Same placeholders as above."></textarea>
+      </label>
+      <div id="tcprobe" class="hidden">
+        <div class="row">
+          <label>Plate thickness (mm)<input id="tcplate" type="number" value="0" min="0" step="0.1" /></label>
+          <label>Probe down to (mm)<input id="tcdepth" type="number" value="25" min="1" step="1" /></label>
+          <label>Probe speed<input id="tcfeed" type="number" value="60" min="1" step="10" /></label>
+        </div>
+        <label class="check"><input type="checkbox" id="tcstart" /> Also find zero at the start of the job (router still off)</label>
+        <label class="check"><input type="checkbox" id="tcxy" /> ...and X/Y zero too, from the plate's recess walls (workpiece lower-left corner)</label>
+        <label class="check"><input type="checkbox" id="tcguided" /> Guided: pause before each touch so I can move the bit (X, then Y, then Z)</label>
+        <div class="row">
+          <label>X wall at (mm)<input id="tcwallx" type="number" value="10" step="0.1" /></label>
+          <label>Bit moves<select id="tcdirx"><option value="-1">towards lower X</option><option value="1">towards higher X</option></select></label>
+        </div>
+        <div class="row">
+          <label>Y wall at (mm)<input id="tcwally" type="number" value="10" step="0.1" /></label>
+          <label>Bit moves<select id="tcdiry"><option value="-1">towards lower Y</option><option value="1">towards higher Y</option></select></label>
+        </div>
+        <div class="row">
+          <label>Sideways reach (mm)<input id="tcreach" type="number" value="20" min="1" step="1" /></label>
+          <label>Rise before sideways (mm)<input id="tcxylift" type="number" value="2.5" min="0" step="0.5" /></label>
+          <label>Back off (mm)<input id="tcback" type="number" value="3" min="0" step="0.5" /></label>
+        </div>
+        <div class="row">
+          <label>Probe command<select id="tcprobecmd"><option value="G38.2">G38.2 (error if it never touches)</option><option value="G38.3">G38.3 (no error)</option></select></label>
+          <label>Set a position with<select id="tczero"><option value="g92">G92 (Marlin, GRBL)</option><option value="g10">G10 L20 P1 (GRBL / LinuxCNC)</option></select></label>
+        </div>
+        <small>Needs a touch plate or probe wired to your controller (the program uses G38.2). <b>Plate thickness</b> is the height of the surface the bit touches above the material (the floor of the recess). At a bit change the bit lowers onto it, Z is set to that thickness, then it lifts and waits while you remove the plate and switch the router on. At the start of the job the router stays off: jog the bit into the recess first. X/Y probing touches the recess walls with the side of the bit; set where each wall is, measured from the zero you want (signed), and which way the bit moves to reach it; the bit radius is added for you. Use a flat or ball bit for that.</small>
+      </div>
+    </div>
+  </details>
   <details id="customgcode">
     <summary>Custom start / end G-code</summary>
     <label>Start G-code
@@ -349,14 +405,14 @@
 <main><canvas id="cv"></canvas>
 <div id="hint">Click = select/deselect &middot; Shift+drag = box select &middot; Drag = pan &middot; Wheel = zoom</div></main>
 <div id="simdlg" class="hidden" role="dialog" aria-label="3D simulation" style="position:fixed;inset:0;background:#000a;z-index:50;align-items:center;justify-content:center">
-  <div style="background:#fff;width:min(1100px,94vw);height:min(760px,92vh);display:flex;flex-direction:column;border-radius:6px;overflow:hidden">
-    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;padding:8px 10px;border-bottom:1px solid #ddd;font-size:13px">
+  <div style="background:var(--paper);width:min(1100px,94vw);height:min(760px,92vh);display:flex;flex-direction:column;border-radius:6px;overflow:hidden">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;padding:8px 10px;border-bottom:1px solid var(--rule);background:var(--plate);font-size:13px">
       <b style="font-size:15px">3D simulation</b>
       <label>Show<select id="simsel"></select></label>
       <label>Stock<select id="simstock"><option value="auto">Automatic (fits the cuts)</option><option value="custom">My own size</option></select></label>
       <span id="simsize" class="hidden"><label>W <input id="simw" type="number" value="300" style="width:64px"></label> <label>H <input id="simh" type="number" value="200" style="width:64px"></label> <label>Thick <input id="simt" type="number" value="18" style="width:56px"></label></span>
       <label>Depth exaggeration<select id="simz"><option value="1">1x (true)</option><option value="2">2x</option><option value="4">4x</option></select></label>
-      <button id="simtop">Top</button><button id="simiso">3D</button><button id="simfront">Side</button>
+      <button id="simdetail" title="Calculate just the part you are looking at in much finer detail (zoom and move to it first)">Sharpen this view</button><button id="simwhole" class="hidden">Whole stock</button><button id="simtop">Top</button><button id="simiso">3D</button><button id="simfront">Side</button>
       <button id="simclose" style="margin-left:auto">Close</button>
     </div>
     <div id="simstatus" style="padding:6px 10px;font-size:13px;min-height:18px"></div>

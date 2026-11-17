@@ -127,3 +127,10 @@ button.big:hover:not(:disabled) { background: #55626d; border-color: #55626d; }
   main { min-height: 60vh; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* simulation window toolbar: compact labels in a row; the custom-size boxes sit side by side */
+#simdlg label { margin: 0; }
+#simdlg select, #simdlg input { margin-top: 2px; }
+#simsize:not(.hidden) { display: flex; gap: 8px; align-items: flex-end; }
+#simsize label { display: flex; flex-direction: column; gap: 0; }
+#simsize input { width: 70px !important; margin-top: 2px; }
