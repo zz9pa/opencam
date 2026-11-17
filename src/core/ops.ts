@@ -1,5 +1,5 @@
 import type { Cut, Direction, Line, Loop, Material, Pt, Pt3, Tool, Toolpath } from './types';
-import { insideRegion, normalize, offset, reverse, signedArea, simplify, simplifyOpen } from './geometry';
+import { insideRegion, normalize, offset, reverse, signedArea, simplify, simplifyOpen, subtract } from './geometry';
 import { buildMoves, buildOpenMoves, leadMoves, type RampParams, type TabParams } from './entry';
 import { radiusAt } from './tool';
 
@@ -95,16 +95,64 @@ export interface PocketParams extends CutParams {
   stepoverFraction: number;
   /** Relieve inside corners so square-cornered parts fit */
   dogbone?: boolean;
+  /**
+   * Radius of lead-in / lead-out arcs, mm (0 or unset = none), for the pass along the pocket wall only (the inner passes
+   * leave nothing to protect). The first depth arrives along a curve into the pocket and the last leaves along one, so
+   * the wall has no plunge or dwell mark. Arcs that do not fit are made smaller, then dropped.
+   */
+  lead?: number;
+  /**
+   * Rest machining: diameter (mm) of an earlier, bigger flat bit that already pocketed this same shape. Only the corners and
+   * narrow parts that bit could not reach are cut (plus a margin of a bit diameter, so the new passes run out into the cleared
+   * area and the bit has room to reach right into the corner). Ignored when it is not bigger than this bit.
+   */
+  rest?: number;
+}
+
+/**
+ * What a flat bit of diameter `big` leaves in a pocket: the places its centre can never reach. The result is those leftovers
+ * grown by `margin` and trimmed to the pocket, ready to be pocketed by the smaller bit.
+ */
+export function restRegion(full: Loop[], big: number, margin: number): Loop[] {
+  const reached = offset(offset(full, -big / 2), big / 2);
+  const left = normalize(subtract(full, offset(reached, 0.05))).filter(l => Math.abs(signedArea(l)) > 0.01);
+  if (!left.length) return [];
+  return normalize(subtract(full, subtract(full, offset(left, margin))));
+}
+
+/** The same closed loop, restarted at the middle of its longest edge (a lead arc needs a straight run to arrive along, not a corner). */
+function startMidEdge(loop: Loop): Loop {
+  let bi = 0, bl = -1;
+  for (let i = 0; i < loop.length; i++) {
+    const l = Math.hypot(loop[(i + 1) % loop.length].x - loop[i].x, loop[(i + 1) % loop.length].y - loop[i].y);
+    if (l > bl) { bl = l; bi = i; }
+  }
+  const a = loop[bi], b = loop[(bi + 1) % loop.length];
+  return [{ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, ...loop.slice(bi + 1), ...loop.slice(0, bi + 1)];
+}
+
+/** Distance from a point to the nearest edge of a set of loops. */
+function edgeDist(loops: Loop[], x: number, y: number): number {
+  let best = Infinity;
+  for (const l of loops) for (let i = 0; i < l.length; i++) {
+    const a = l[i], b = l[(i + 1) % l.length];
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+    const t = len2 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / len2)) : 0;
+    best = Math.min(best, Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy)));
+  }
+  return best;
 }
 
 /** Clear the interior of shapes with concentric contour-parallel passes. */
 export function pocket(shapes: Loop[], p: PocketParams): Toolpath {
-  const region = normalize(shapes);
+  const full = normalize(shapes);
+  const region = p.rest && p.rest > p.tool.diameter ? restRegion(full, p.rest, p.tool.diameter + 0.5) : full;
   const climb = p.direction === 'climb';
   const cuts: Cut[] = [];
   let zStart = -(p.start ?? 0);
-  const corners = p.dogbone ? insideCorners(region) : [];
-  for (const z of depthLevels(p.depth, p.material.stepdown, p.start)) {
+  const corners = p.dogbone ? insideCorners(full) : [];
+  const levels = depthLevels(p.depth, p.material.stepdown, p.start);
+  for (const [li, z] of levels.entries()) {
     const r = radiusAt(p.tool, z);
     const step = 2 * r * p.stepoverFraction;
     for (let d = r, guard = 0; guard < 2000; d += step, guard++) {
@@ -115,8 +163,18 @@ export function pocket(shapes: Loop[], p: PocketParams): Toolpath {
         const l = corners.length && guard === 0 ? addDogbones(raw, corners, r) : raw;
         // Tool is inside outer boundaries and outside islands.
         const toolOutside = signedArea(raw) < 0;
-        const loop = orient(l, toolOutside !== climb);
-        cuts.push({ loop, z, zStart, closed: true, ...airTo(p.start, zStart), moves: buildMoves(loop, zStart, z, 2 * r, { ramp: p.ramp }) });
+        const oriented = orient(l, toolOutside !== climb);
+        const wantLead = !!p.lead && p.lead > 0 && guard === 0;
+        const loop = wantLead ? startMidEdge(oriented) : oriented; // same start at every depth, so the later depths rapid into the kerf
+        const lead = { in: li === 0, out: li === levels.length - 1 };
+        let moves: Pt3[] | null = null;
+        if (wantLead && p.lead && (lead.in || lead.out)) {
+          // the arcs bend into the pocket: they must stay where the bit centre may go (inside the wall pass; the boundary itself counts)
+          const clear = (q: Pt) => insideRegion(ring, q.x, q.y) || edgeDist(ring, q.x, q.y) < 1e-6;
+          const body = lead.in ? buildMoves(loop, z, z, 2 * r, {}) : buildMoves(loop, zStart, z, 2 * r, { ramp: p.ramp });
+          moves = leadMoves(body, zStart, z, p.lead, climb, lead, clear);
+        }
+        cuts.push({ loop, z, zStart, closed: true, ...airTo(p.start, zStart), moves: moves ?? buildMoves(loop, zStart, z, 2 * r, { ramp: p.ramp }) });
       }
     }
     zStart = z;

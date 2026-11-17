@@ -19,7 +19,13 @@ export interface Post {
   decimals: number;
   /** Marlin treats G0 like G1 and keeps the last feed rate, so fast moves would crawl at the last cutting or plunge feed. Marlin output therefore states this feed (mm/min) on every G0; the firmware still limits each axis to its own maximum. */
   rapidFeed?: number;
+  /** Your own start lines. When not blank they REPLACE the built-in "start the router" lines (they go right after G21 G90 G17). */
+  startGcode?: string;
+  /** Your own end lines. When not blank they REPLACE the built-in "stop the router / go to X0 Y0 / M2" lines (they go after the final lift to safe Z). */
+  endGcode?: string;
 }
+
+const customLines = (s?: string) => (s ?? '').replace(/\r/g, '').split('\n').map(l => l.trimEnd()).filter(l => l.trim() !== '');
 
 export const MPCNC_MAKITA: Post = { flavor: 'marlin', spindle: 'manual', safeZ: 5, decimals: 3 };
 
@@ -61,7 +67,9 @@ export function toGcode(paths: Toolpath[], post: Post = MPCNC_MAKITA): string {
     ...(post.arcs ? ['; Uses G2/G3 arcs: your firmware must support them (run the arc test file first).'] : []),
     'G21', 'G90', 'G17',
   ];
-  if (post.spindle === 'm3') out.push(`M3 S${post.spindleRpm ?? 10000}`);
+  const startLines = customLines(post.startGcode);
+  if (startLines.length) out.push('; --- your start G-code ---', ...startLines, '; --- end of your start G-code ---');
+  else if (post.spindle === 'm3') out.push(`M3 S${post.spindleRpm ?? 10000}`);
   else if (post.flavor === 'marlin') out.push('M117 Start the router', 'M0 ; start the router, then resume');
   else out.push('; Start the router now, then cycle start', 'M0');
   let lastF = -1;
@@ -126,10 +134,14 @@ export function toGcode(paths: Toolpath[], post: Post = MPCNC_MAKITA): string {
     }
   }
   out.push(g0(`Z${f(post.safeZ)}`));
-  if (post.spindle === 'm3') out.push('M5');
-  else out.push('; Stop the router now');
-  out.push(g0('X0 Y0'));
-  if (post.flavor === 'grbl') out.push('M2');
+  const endLines = customLines(post.endGcode);
+  if (endLines.length) out.push('; --- your end G-code ---', ...endLines);
+  else {
+    if (post.spindle === 'm3') out.push('M5');
+    else out.push('; Stop the router now');
+    out.push(g0('X0 Y0'));
+    if (post.flavor === 'grbl') out.push('M2');
+  }
   return out.join('\n') + '\n';
 }
 

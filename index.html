@@ -159,6 +159,21 @@
   </label>
   <div id="arcinfo" style="background:#fff8e1;padding:6px 8px;margin:4px 0;font-size:13px"></div>
   <button id="arctest" title="A harmless air-cut program: the tool stays 10 mm above zero">Download arc test file (air cut)</button>
+  <details id="customgcode">
+    <summary>Custom start / end G-code</summary>
+    <label>Start G-code
+      <textarea id="startgcode" rows="4" spellcheck="false" placeholder="Blank = the built-in start (pause so you can switch the router on). Goes right after G21 G90 G17. Example: M3 S12000"></textarea>
+    </label>
+    <label>End G-code
+      <textarea id="endgcode" rows="4" spellcheck="false" placeholder="Blank = the built-in end (stop the router, go to X0 Y0). Goes after the final lift to safe Z. Example: M5 then G0 X0 Y0"></textarea>
+    </label>
+    <small>Your lines replace the built-in start / end lines. They are written exactly as typed, so you are responsible for them (spindle on/off, parking, M2 on GRBL).</small>
+    <div class="btns">
+      <button id="savemachine" title="Remember firmware, arcs, work area and this start/end G-code in this browser for every new project">Save as my machine defaults</button>
+      <button id="forgetmachine" title="Go back to the built-in defaults on the next start">Forget saved defaults</button>
+    </div>
+    <div id="machinemsg" style="font-size:13px;color:#2e7d32"></div>
+  </details>
   <div class="row">
     <label>Work area X (mm)<input id="bedx" type="number" value="600" min="10" /></label>
     <label>Y (mm)<input id="bedy" type="number" value="600" min="10" /></label>
@@ -323,6 +338,10 @@
     <label id="vflatrow" class="hidden">Flat bit diameter (mm)<input id="vflat" type="number" value="6" min="0.5" step="0.5" />
       <small>A flat end mill clears the wide floor to the full depth first. The program pauses for you to change to the V-bit, which then cuts the sloped walls and the thinner strokes.</small></label>
   </div>
+  <div id="restrow" class="hidden">
+    <label>Rest machining: diameter of the earlier, bigger bit (mm, 0 = off)<input id="prest" type="number" value="0" min="0" step="0.5" />
+      <small>Only cuts what that bigger flat bit could not reach (corners, narrow parts). Pocket with the big bit first, then add the same pocket here with the smaller bit and the same depth.</small></label>
+  </div>
   <div id="dogrow" class="hidden">
     <label class="check"><input type="checkbox" id="dogbone" /> Dogbone corners (so square-cornered parts fit)</label>
   </div>
@@ -335,8 +354,10 @@
     </div>
   </div>
   <label class="check"><input type="checkbox" id="ramp" checked /> Ramp into the cut (gentler on bit and machine)</label>
-  <div id="tabbox">
+  <div id="leadrow">
     <label class="check"><input type="checkbox" id="lead" /> Lead-in and lead-out (curved entry and exit: no plunge mark on the edge)</label>
+  </div>
+  <div id="tabbox">
     <label class="check"><input type="checkbox" id="tabs" checked /> Holding tabs (cut-outs only)</label>
     <div class="row">
       <label>Tabs<input id="tabn" type="number" value="4" min="1" max="20" /></label>

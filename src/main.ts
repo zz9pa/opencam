@@ -4,6 +4,7 @@ import { processImport, DEFAULT_IMPORT, type Shape, type ImportOptions } from '.
 import { HINTS } from './hints';
 import { History, snapshotToProject, projectToSnapshot, type Snapshot } from './project';
 import { kvGet, kvSet, kvDelete } from './storage';
+import { loadMachine, saveMachine, forgetMachine, type MachineProfile } from './machine';
 import { loadFont, FONTS, type FontId } from './text/fonts';
 import { textToContours, placeContours } from './text/outline';
 import { textItemsToShapes } from './import/text';
@@ -49,6 +50,8 @@ interface Settings {
   kind: Kind; ttype: ToolType; diameter: number; angle: number; tip: number; depth: number; start: number;
   dir: Direction; ramp: boolean; tabs: boolean; lead: boolean; tabn: number; tabw: number; tabh: number;
   flute: number;
+  /** Pocket: diameter of an earlier, bigger flat bit that already cleared this pocket (0 = none); this bit then cuts only what it left */
+  prest?: number;
   /** V-carve: what to do where a shape is wider than the bit can reach at the maximum depth */
   wide: 'clear' | 'skip' | 'flat';
   /** V-carve with a flat-bit companion: diameter of the flat bit (mm) */
@@ -162,6 +165,7 @@ function readForm(): Settings {
     diameter: +inp('tool').value, angle: +inp('vangle').value, tip: +inp('vtip').value,
     depth: +inp('depth').value, start: +inp('start').value || 0, dir: sel('dir').value as Direction, ramp: inp('ramp').checked,
     tabs: inp('tabs').checked, lead: inp('lead').checked, tabn: +inp('tabn').value, tabw: +inp('tabw').value, tabh: +inp('tabh').value,
+    prest: +inp('prest').value || 0,
     flute: +inp('flute').value, wide: sel('vwide').value as 'clear' | 'skip' | 'flat', vflat: +inp('vflat').value, glue: +inp('iglue').value, moat: +inp('imoat').value, dogbone: inp('dogbone').checked,
     side: sel('side').value as 'front' | 'back', frame: sel('frame').value as 'front' | 'back',
     m3: { x: +inp('stlx').value || 0, y: +inp('stly').value || 0, top: +inp('stltop').value || 0, stepR: +inp('stlsr').value, stepF: +inp('stlsf').value, leave: +inp('stlleave').value || 0, zig: inp('stlzig').checked, cross: inp('stlcross').checked, rest: +inp('stlrest').value || 0, steep: +inp('stlsteep').value || 0 },
@@ -178,12 +182,13 @@ function writeForm(s: Settings) {
   sel('dir').value = s.dir; inp('ramp').checked = s.ramp; inp('tabs').checked = s.tabs; inp('lead').checked = !!s.lead;
   inp('tabn').value = String(s.tabn); inp('tabw').value = String(s.tabw); inp('tabh').value = String(s.tabh);
   inp('flute').value = String(s.flute); sel('vwide').value = s.wide; inp('vflat').value = String(s.vflat); inp('iglue').value = String(s.glue); inp('imoat').value = String(s.moat); inp('dogbone').checked = s.dogbone;
-  sel('side').value = s.side; sel('frame').value = s.frame;
+  sel('side').value = s.side; sel('frame').value = s.frame; inp('prest').value = String(s.prest ?? 0);
   syncVisibility();
 }
 function syncVisibility() {
   $('vrow').classList.toggle('hidden', sel('ttype').value !== 'vbit');
   $('tabbox').classList.toggle('hidden', !['outside', 'inside'].includes(sel('op').value));
+  $('leadrow').classList.toggle('hidden', !['outside', 'inside', 'pocket'].includes(sel('op').value));
   $('vcarverow').classList.toggle('hidden', sel('op').value !== 'vcarve');
   const inl = ['inlay', 'inlayflat'].includes(sel('op').value), flatInl = sel('op').value === 'inlayflat';
   $('inlayrow').classList.toggle('hidden', !inl);
@@ -192,6 +197,7 @@ function syncVisibility() {
   $('vflatrow').classList.toggle('hidden', !(sel('op').value === 'vcarve' && sel('vwide').value === 'flat'));
   $('startrow').classList.toggle('hidden', ['vcarve', 'inlay', 'inlayflat'].includes(sel('op').value));
   $('dogrow').classList.toggle('hidden', !['pocket', 'inside'].includes(sel('op').value));
+  $('restrow').classList.toggle('hidden', sel('op').value !== 'pocket');
   const on = ts().on;
   const sp = ts().split;
   $('spbox').classList.toggle('hidden', !sp);
@@ -339,7 +345,12 @@ function compile(op: Op) {
       }
       if (s.tip > 0 && s.tip / 2 > 0.5) msgs.push(`The tip of this V-bit is ${s.tip} mm wide, so strokes thinner than that are only engraved on the surface.`);
     } else if (s.kind === 'pocket') {
-      op.tp = pocket(closed, { ...params, stepoverFraction: 0.4, dogbone: s.dogbone });
+      const rest = s.prest && s.prest > 0 ? s.prest : undefined;
+      op.tp = pocket(closed, { ...params, stepoverFraction: 0.4, dogbone: s.dogbone, lead: s.lead ? Math.min(8, Math.max(2, s.diameter)) : 0, rest });
+      if (rest) {
+        if (rest <= s.diameter) msgs.push(`The earlier bit (${rest} mm) is not bigger than this ${s.diameter} mm bit, so there is nothing to rest: the whole pocket is cut.`);
+        else if (!op.tp.cuts.length) { op.msgs = [...msgs, `Nothing left over: a ${rest} mm bit reaches everything this bit could.`]; return; }
+      }
       if (s.dogbone && s.ttype !== 'flat') msgs.push('Dogbone corners are meant for a flat end mill. With other bits the relief is not accurate.');
     } else {
       const tabs = s.tabs ? { count: s.tabn, width: s.tabw, height: s.tabh } : undefined;
@@ -1138,7 +1149,7 @@ sel('op').addEventListener('input', () => {
   }
 });
 
-['op', 'side', 'frame', 'ttype', 'tool', 'flute', 'vangle', 'vtip', 'vwide', 'depth', 'start', 'dir', 'ramp', 'tabs', 'lead', 'tabn', 'tabw', 'tabh', 'dogbone', 'iglue', 'imoat', 'vflat', 'stlx', 'stly', 'stltop', 'stlsr', 'stlsf', 'stlleave', 'stlzig', 'stlcross', 'stlrest', 'stlsteep'].forEach(id =>
+['op', 'side', 'frame', 'ttype', 'tool', 'flute', 'vangle', 'vtip', 'vwide', 'depth', 'start', 'dir', 'ramp', 'tabs', 'lead', 'tabn', 'tabw', 'tabh', 'dogbone', 'prest', 'iglue', 'imoat', 'vflat', 'stlx', 'stly', 'stltop', 'stlsr', 'stlsf', 'stlleave', 'stlzig', 'stlcross', 'stlrest', 'stlsteep'].forEach(id =>
   $(id).addEventListener('input', () => {
     syncVisibility();
     if (active) { const kind = active.s.kind; active.s = readForm(); if (is3d(kind)) active.s.kind = kind; compile(active); refreshUi(); draw(); }
@@ -1217,12 +1228,32 @@ $('arctest').addEventListener('click', () => {
   a.href = URL.createObjectURL(new Blob([arcTestGcode(sel('flavor').value as Flavor)], { type: 'text/plain' }));
   a.download = 'arc_test_air_cut.gcode'; a.click();
 });
+// Machine defaults kept in this browser: firmware, arcs, work area and custom start/end G-code.
+const startBox = $('startgcode') as HTMLTextAreaElement, endBox = $('endgcode') as HTMLTextAreaElement;
+const store = (() => { try { return localStorage; } catch { return undefined; } })();
+function machineNow(): MachineProfile {
+  return { flavor: sel('flavor').value as Flavor, arcs: sel('arcs').value === 'on', bedX: +inp('bedx').value, bedY: +inp('bedy').value, startGcode: startBox.value, endGcode: endBox.value };
+}
+{
+  const m = loadMachine(store);
+  if (m.flavor) sel('flavor').value = m.flavor;
+  if (m.arcs !== undefined) sel('arcs').value = m.arcs ? 'on' : 'off';
+  if (m.bedX) inp('bedx').value = String(m.bedX);
+  if (m.bedY) inp('bedy').value = String(m.bedY);
+  if (m.startGcode !== undefined) startBox.value = m.startGcode;
+  if (m.endGcode !== undefined) endBox.value = m.endGcode;
+  if (m.startGcode || m.endGcode) ($('customgcode') as HTMLDetailsElement).open = true;
+}
+$('savemachine').addEventListener('click', () => {
+  $('machinemsg').textContent = saveMachine(store, machineNow()) ? 'Saved. New projects in this browser start with these.' : 'The browser would not store it (private window or storage full).';
+});
+$('forgetmachine').addEventListener('click', () => { forgetMachine(store); $('machinemsg').textContent = 'Forgotten. The built-in defaults apply next time.'; });
 arcInfo();
 addEventListener('resize', draw);
 
 function download(paths: Toolpath[], name: string, note: string) {
   if (!paths.length) return;
-  const text = toGcode(paths, { flavor: sel('flavor').value as Flavor, spindle: 'manual', safeZ: 5, decimals: 3, arcs: sel('arcs').value === 'on' })
+  const text = toGcode(paths, { flavor: sel('flavor').value as Flavor, spindle: 'manual', safeZ: 5, decimals: 3, arcs: sel('arcs').value === 'on', startGcode: startBox.value, endGcode: endBox.value })
     .replace(/; Units: mm, absolute\. Work zero:.*\n/, '; Units: mm, absolute.\n') // the notes below say where zero is; avoid a conflicting generic line
     .replace('\n', `\n${note.split('\n').map(l => '; ' + l).join('\n')}\n`);
   const a = document.createElement('a');
