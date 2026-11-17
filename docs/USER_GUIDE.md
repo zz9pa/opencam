@@ -294,6 +294,10 @@ The simulation also checks for problems and lists them above the picture: fast m
 
 The simulation shows what a router cutting from above can make. It is a guide, not a promise: it does not model the bit bending, chips, or the machine's own movement.
 
+## Resizing the panel
+
+Drag the thin divider between the control panel and the drawing to make the panel wider or narrower (or click it and use the left and right arrow keys). Double-click it to go back to the normal width. The width is remembered in this browser.
+
 ## Where X/Y zero is
 
 Under the machine settings, **Where X/Y zero is on the machine** chooses where the program's X0 Y0 is:

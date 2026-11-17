@@ -4,43 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>open-cam</title>
-<style>
-  body { font: 14px system-ui, sans-serif; margin: 0; display: flex; height: 100vh; }
-  aside { width: 340px; padding: 14px; background: #f4f4f6; overflow: auto; flex: none; }
-  main { flex: 1; position: relative; min-width: 0; }
-  canvas { width: 100%; height: 100%; display: block; background: #fff; cursor: crosshair; }
-  h1 { font-size: 18px; margin: 0 0 8px; }
-  h2 { font-size: 12px; text-transform: uppercase; color: #666; margin: 16px 0 6px; }
-  label { display: block; margin: 6px 0; }
-  label.check { display: flex; gap: 8px; align-items: center; }
-  label.check input { width: auto; }
-  input, select { width: 100%; box-sizing: border-box; padding: 5px; }
-  .row { display: flex; gap: 8px; } .row label { flex: 1; }
-  small { color: #666; display: block; }
-  button { padding: 7px 10px; font-size: 14px; cursor: pointer; }
-  button.big { width: 100%; padding: 10px; margin-top: 10px; font-size: 15px; }
-  .btns { display: flex; gap: 6px; margin-top: 8px; } .btns button { flex: 1; }
-  #warn { color: #b00020; margin-top: 8px; } #warn div { margin: 4px 0; }
-  .hidden { display: none; }
-  .helpbtn { padding: 0; width: 18px; height: 18px; line-height: 16px; font-size: 12px; margin-left: 6px; border-radius: 50%; border: 1px solid #90a4ae; background: #fff; color: #37474f; cursor: pointer; vertical-align: middle; }
-  .helpbtn:hover { background: #e3f2fd; }
-  #helpdrawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 94vw); background: #fff; border-left: 1px solid #cfd8dc; box-shadow: -8px 0 30px #0003; z-index: 30; display: flex; flex-direction: column; }
-  #helpdrawer.hidden { display: none; }
-  #helpdrawer .hd { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid #eceff1; background: #f6f8fa; }
-  #helpdrawer .hd a { margin-left: auto; font-size: 13px; }
-  #helpdrawer .hd button { padding: 2px 9px; }
-  #helpframe { flex: 1; border: 0; width: 100%; }
-  summary { cursor: pointer; }
-  #layers { max-height: 220px; overflow: auto; background: #fff; border: 1px solid #ddd; }
-  .layer { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-bottom: 1px solid #eee; }
-  .layer span.n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .layer button { padding: 2px 6px; font-size: 12px; }
-  .layer input { width: auto; }
-  #ops .op { background: #fff; border: 1px solid #ddd; padding: 6px 8px; margin: 4px 0; cursor: pointer; }
-  #ops .op.active { border-color: #1565c0; background: #e8f0fe; }
-  #hint { position: absolute; left: 10px; bottom: 8px; background: #fffd; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #444; }
-  #sel { font-weight: 600; margin: 6px 0; }
-#simdlg:not(.hidden){display:flex}#simdlg.hidden{display:none}</style>
 </head>
 <body>
 <aside>
@@ -375,11 +338,13 @@
   <div id="warn"></div>
   <div id="eta" style="margin-top:8px;font-size:13px;color:#37474f"></div>
   <div id="splitfiles"></div>
+  <small id="zeronote">Zero X/Y at the bottom-left of your work area and Z on the TOP of the material. Your part is placed 5 mm in from that corner.</small>
+  <div id="actions">
   <button id="simbtn" class="big" title="See the material being cut away, in 3D">Simulate the job (3D preview)</button>
   <button id="dl" class="big">Download G-code</button>
   <button id="dl0" class="big hidden">Download step 0: spoilboard holes (NO stock)</button>
   <button id="dl2" class="big hidden">Download side 2 G-code</button>
-  <small id="zeronote">Zero X/Y at the bottom-left of your work area and Z on the TOP of the material. Your part is placed 5 mm in from that corner.</small>
+  </div>
 </aside>
 <main><canvas id="cv"></canvas>
 <div id="hint">Click = select/deselect &middot; Shift+drag = box select &middot; Drag = pan &middot; Wheel = zoom</div></main>

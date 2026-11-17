@@ -1,0 +1,129 @@
+/*
+ * open-cam: workshop look. Concrete-grey control panel on the left, paper-coloured drawing area on the right.
+ * One bold thing: dark steel plates for the section headings and the action strip; everything else stays quiet.
+ * Orange is only for "make the file" and warnings, teal is for "this is selected / this is a control you can open".
+ */
+:root {
+  --ink: #1e2429;
+  --steel: #2c353c;
+  --steel-2: #44505a;
+  --muted: #5f6a72;
+  --panel: #dcded9;
+  --plate: #eceeea;
+  --paper: #f8f8f5;
+  --rule: #b9bdb5;
+  --field: #ffffff;
+  --accent: #0e6b72;
+  --accent-tint: #dcecec;
+  --hot: #d9560b;
+  --hot-dark: #b94606;
+  --danger: #a9231b;
+  --radius: 3px;
+  --font: "Bahnschrift", "DIN Alternate", "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { font: 14px/1.4 var(--font); margin: 0; display: flex; height: 100vh; color: var(--ink); background: var(--panel); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- the panel ---------- */
+aside { width: 360px; padding: 14px 14px 0; background: var(--panel); overflow: auto; flex: none; border-right: 1px solid var(--rule); }
+#splitter { flex: none; width: 7px; margin-left: -3px; cursor: col-resize; position: relative; z-index: 2; touch-action: none; }
+#splitter::after { content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 1px; background: var(--rule); }
+#splitter:hover::after, #splitter.drag::after, #splitter:focus-visible::after { width: 3px; left: 2px; background: var(--accent); }
+main { flex: 1; position: relative; min-width: 0; background: var(--paper); }
+canvas { width: 100%; height: 100%; display: block; background: var(--paper); cursor: crosshair; }
+
+h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 10px; display: flex; align-items: baseline; gap: 10px; }
+h1 a { font-size: 13px; font-weight: 400; color: var(--accent); }
+a { color: var(--accent); }
+
+/* a numbered step: dark plate heading, light body that folds away */
+.step { margin: 0 0 10px; border: 1px solid var(--rule); background: var(--plate); border-radius: var(--radius); overflow: hidden; }
+.step > h2 { margin: 0; padding: 8px 10px; background: var(--steel); color: #fff; font-size: 13.5px; font-weight: 600; letter-spacing: 0.01em;
+  display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+.step > h2::after { content: ""; margin-left: auto; width: 7px; height: 7px; border-right: 2px solid #c9d0d5; border-bottom: 2px solid #c9d0d5; transform: rotate(45deg) translate(-2px, -2px); transition: transform .12s; }
+.step.collapsed > h2::after { transform: rotate(-45deg); }
+.step > .body { padding: 6px 10px 10px; }
+.step.collapsed > .body { display: none; }
+.step > h2 .helpbtn { margin-left: 4px; border-color: #7f8b93; background: transparent; color: #dfe4e7; }
+.step > h2 .helpbtn:hover { background: var(--steel-2); }
+/* a step inside a step (dowels inside the two-sided job) */
+.step .step { background: var(--panel); }
+.step .step > h2 { background: var(--steel-2); }
+
+/* ---------- fields ---------- */
+label { display: block; margin: 7px 0; font-size: 12.5px; color: var(--steel-2); font-weight: 600; }
+label.check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; font-size: 13.5px; color: var(--ink); }
+label.check input { width: auto; margin-top: 2px; accent-color: var(--accent); }
+input, select, textarea { width: 100%; padding: 6px 7px; margin-top: 3px; font: inherit; font-size: 14px; font-weight: 400; color: var(--ink);
+  background: var(--field); border: 1px solid var(--rule); border-radius: var(--radius); }
+input[type=number] { font-variant-numeric: tabular-nums; }
+input[type=file] { padding: 5px; background: transparent; border-style: dashed; }
+input:hover, select:hover, textarea:hover { border-color: #8d948a; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+textarea { font-family: inherit; resize: vertical; }
+#startgcode, #endgcode { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+.row { display: flex; gap: 8px; } .row label { flex: 1; min-width: 0; }
+small { color: var(--muted); display: block; font-weight: 400; font-size: 12px; line-height: 1.35; margin-top: 3px; }
+summary { cursor: pointer; font-weight: 600; color: var(--accent); padding: 4px 0; }
+details { margin: 6px 0; }
+details[open] > summary { margin-bottom: 4px; }
+
+/* ---------- buttons ---------- */
+button { padding: 7px 10px; font: inherit; font-size: 13.5px; cursor: pointer; color: var(--ink); background: var(--field); border: 1px solid var(--rule); border-radius: var(--radius); }
+button:hover:not(:disabled) { background: #f2f4ef; border-color: #8d948a; }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:disabled { color: #98a0a6; cursor: default; }
+.btns { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; } .btns button { flex: 1; }
+#projbar { margin-bottom: 10px; }
+button.big { width: 100%; padding: 11px; margin: 0; font-size: 15px; font-weight: 600; color: #fff; background: var(--steel-2); border-color: var(--steel-2); }
+button.big:hover:not(:disabled) { background: #55626d; border-color: #55626d; }
+#addop { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+#addop:hover:not(:disabled) { background: #0b565c; border-color: #0b565c; }
+
+/* the strip that stays at the bottom of the panel: what you came here to do */
+#actions { position: sticky; bottom: 0; margin: 10px -14px 0; padding: 10px 14px 12px; background: var(--steel); display: grid; gap: 6px; border-top: 3px solid var(--hot); }
+#actions button.big.hidden { display: none; }
+#simbtn { background: transparent; border-color: #8c99a2; color: #fff; }
+#simbtn:hover:not(:disabled) { background: var(--steel-2); }
+#dl { background: var(--hot); border-color: var(--hot); color: #fff; }
+#dl:hover:not(:disabled) { background: var(--hot-dark); border-color: var(--hot-dark); }
+
+.hidden { display: none; }
+#warn { color: var(--danger); margin-top: 8px; font-size: 13px; } #warn div { margin: 4px 0; }
+
+/* ---------- lists ---------- */
+#layers { max-height: 220px; overflow: auto; background: var(--field); border: 1px solid var(--rule); border-radius: var(--radius); }
+.layer { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-bottom: 1px solid #e3e5df; }
+.layer span.n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer button { padding: 2px 6px; font-size: 12px; }
+.layer input { width: auto; margin: 0; }
+#ops .op { background: var(--field); border: 1px solid var(--rule); border-left: 4px solid var(--rule); border-radius: var(--radius); padding: 6px 8px; margin: 5px 0; cursor: pointer; }
+#ops .op:hover { border-color: #8d948a; border-left-color: #8d948a; }
+#ops .op.active { border-color: var(--accent); border-left-color: var(--accent); background: var(--accent-tint); }
+#sel { font-weight: 600; margin: 6px 0; font-size: 13.5px; }
+
+/* ---------- drawing area ---------- */
+#hint { position: absolute; left: 10px; bottom: 10px; background: var(--steel); color: #e6eaec; padding: 5px 10px; border-radius: var(--radius); font-size: 12px; }
+#restorebar { border-radius: var(--radius); }
+
+/* ---------- help drawer and simulation window ---------- */
+.helpbtn { padding: 0; width: 18px; height: 18px; line-height: 16px; font-size: 12px; margin-left: 6px; border-radius: 50%; border: 1px solid #90a4ae; background: #fff; color: var(--steel-2); cursor: pointer; vertical-align: middle; flex: none; }
+.helpbtn:hover { background: var(--accent-tint); }
+#helpdrawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 94vw); background: #fff; border-left: 1px solid var(--rule); box-shadow: -8px 0 30px #0003; z-index: 30; display: flex; flex-direction: column; }
+#helpdrawer.hidden { display: none; }
+#helpdrawer .hd { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid #dcded9; background: var(--plate); }
+#helpdrawer .hd a { margin-left: auto; font-size: 13px; }
+#helpdrawer .hd button { padding: 2px 9px; }
+#helpframe { flex: 1; border: 0; width: 100%; }
+#simdlg:not(.hidden) { display: flex; } #simdlg.hidden { display: none; }
+
+/* ---------- narrow windows: panel on top, drawing below ---------- */
+@media (max-width: 760px) {
+  body { flex-direction: column; height: auto; min-height: 100vh; }
+  #splitter { display: none; }
+  aside { width: auto !important; max-height: 60vh; border-right: 0; border-bottom: 1px solid var(--rule); }
+  main { min-height: 60vh; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

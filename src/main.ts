@@ -1,3 +1,5 @@
+import './style.css';
+import './ui';
 import { parseSvgRaw } from './svg';
 import { parseDxf } from './import/dxf';
 import { processImport, DEFAULT_IMPORT, type Shape, type ImportOptions } from './import';

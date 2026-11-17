@@ -249,3 +249,9 @@ src/core/runout.ts runOutToEdge(line, edge) returns {pts, free}: each end of the
 - **Zero at "part"** uses the bounding box of the shapes that have operations (plus the 3D model), not the path the bit's edge takes.
 - **HTML safety:** layer names and file names go through `esc()` before being put in the page.
 - **Simulation viewer:** a fresh canvas per opening (old listeners and GL context go with the old canvas), program deleted on dispose; auto-stock mode says it cannot show spoilboard contact.
+
+## Look and layout
+- No UI framework: plain HTML (`index.html`) and TypeScript. All styling is in `src/style.css` (design tokens at the top: concrete-grey panel, paper-coloured drawing area, dark steel step plates, orange only for the download action and teal for selection).
+- `src/ui.ts` turns every `aside h2` into a folding "step" plate by MOVING its following siblings into a `.body` div (elements keep their ids, so no other code is affected). Fold state is remembered in localStorage (`open-cam.folded`); the two-sided and split sections start folded. The simulation, download and zero-note elements sit in the sticky `#actions` strip.
+- A draggable divider (`#splitter`, also arrow keys; double-click resets) sets the panel width (260 to 900 px); remembered in localStorage (`open-cam.panelWidth`) and it fires a window `resize` so the canvas redraws.
+- Not restyled yet: `help.html` (the guide page) and the colours the drawing canvas and simulation use.
