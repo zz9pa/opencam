@@ -1,0 +1,20 @@
+{
+  "id": "grbl",
+  "name": "GRBL",
+  "description": "GRBL 1.1 (Arduino-based hobby controllers). Arcs always work.",
+  "fileExtension": "gcode",
+  "motion": {
+    "arcInterpolation": true
+  },
+  "feedSpeed": {
+    "rpmCommand": "S",
+    "spindleOnCW": "M3",
+    "spindleOff": "M5"
+  },
+  "stop": {
+    "programEndCommand": "M2"
+  },
+  "openCam": {
+    "spindle": "manual"
+  }
+}

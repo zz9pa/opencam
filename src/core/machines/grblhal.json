@@ -1,0 +1,47 @@
+{
+  "id": "grblhal",
+  "name": "grblHAL",
+  "description": "grblHAL: the 32-bit GRBL with work coordinate systems.",
+  "source": "Adapted from PureCutCNC (https://github.com/PureCutCNC/purecutcnc), Apache-2.0, Copyright 2026 Franja (Frank) Povazanj. Changed for open-cam: see NOTICE.md.",
+  "fileExtension": "nc",
+  "program": {
+    "header": [
+      "( {programName} )",
+      "G90",
+      "G17",
+      "{unitsCommand}",
+      "{wcsCommand}"
+    ],
+    "footer": [
+      "M5",
+      "G0 G53 Z0"
+    ],
+    "commentPrefix": "(",
+    "commentSuffix": ")",
+    "lineNumbers": false,
+    "lineNumberIncrement": 10
+  },
+  "workCoordinates": {
+    "selectCommand": "G54"
+  },
+  "motion": {
+    "arcInterpolation": true
+  },
+  "feedSpeed": {
+    "rpmCommand": "S",
+    "spindleOnCW": "M3",
+    "spindleOff": "M5"
+  },
+  "toolChange": {
+    "commands": [
+      "M5",
+      "M6 ( Tool change: {toolName} )"
+    ]
+  },
+  "stop": {
+    "programEndCommand": "M30"
+  },
+  "openCam": {
+    "spindle": "m3"
+  }
+}

@@ -4,10 +4,15 @@
  * machine stays with the browser.
  */
 import type { ToolChange } from './core/gcode';
+import { hasMachine } from './core/machines';
 
 export interface MachineProfile {
-  flavor: 'marlin' | 'grbl';
+  /** The id of a controller definition (src/core/machines/*.json). */
+  flavor: string;
   arcs: boolean;
+  /** 'manual': the file pauses so you can switch the router on; 'm3': the controller does (M3 S...). */
+  spindle: 'manual' | 'm3';
+  rpm: number;
   bedX: number;
   bedY: number;
   startGcode: string;
@@ -27,7 +32,9 @@ export function loadMachine(store: KV | undefined): Partial<MachineProfile> {
   if (!raw || typeof raw !== 'object') return {};
   const r = raw as Record<string, unknown>;
   const out: Partial<MachineProfile> = {};
-  if (r.flavor === 'marlin' || r.flavor === 'grbl') out.flavor = r.flavor;
+  if (typeof r.flavor === 'string' && hasMachine(r.flavor)) out.flavor = r.flavor;
+  if (r.spindle === 'manual' || r.spindle === 'm3') out.spindle = r.spindle;
+  if (typeof r.rpm === 'number' && r.rpm >= 1 && r.rpm <= 200000) out.rpm = r.rpm;
   if (typeof r.arcs === 'boolean') out.arcs = r.arcs;
   if (typeof r.bedX === 'number' && r.bedX >= 10) out.bedX = r.bedX;
   if (typeof r.bedY === 'number' && r.bedY >= 10) out.bedY = r.bedY;

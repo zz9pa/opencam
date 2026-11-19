@@ -114,6 +114,16 @@
   <label>Controller firmware
     <select id="flavor"><option value="marlin">Marlin (MPCNC default)</option><option value="grbl">GRBL</option></select>
   </label>
+  <div id="flavorinfo" class="hint"></div>
+  <label>Router / spindle
+    <select id="spindle">
+      <option value="manual">I switch it on by hand (the file pauses)</option>
+      <option value="m3">The controller switches it on (M3 S...)</option>
+    </select>
+  </label>
+  <label id="rpmlbl" class="hidden">Spindle speed (rpm)
+    <input id="rpm" type="number" value="10000" min="1" max="200000" step="100" />
+  </label>
   <label>Arcs (G2/G3)
     <select id="arcs">
       <option value="off">Off - short straight lines only (works everywhere)</option>
@@ -400,6 +410,7 @@
   <button id="dl" class="big">Download G-code</button>
   <button id="dl0" class="big hidden">Download step 0: spoilboard holes (NO stock)</button>
   <button id="dl2" class="big hidden">Download side 2 G-code</button>
+  <button id="sheet" title="A printable page for the machine: bits, order, zero, run time, a picture of the cuts">Print setup sheet</button>
   </div>
 </aside>
 <main><canvas id="cv"></canvas>

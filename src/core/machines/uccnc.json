@@ -1,0 +1,44 @@
+{
+  "id": "uccnc",
+  "name": "UCCNC",
+  "description": "UCCNC: CNCdrive's Windows controller (Mach3-style dialect).",
+  "source": "Adapted from PureCutCNC (https://github.com/PureCutCNC/purecutcnc), Apache-2.0, Copyright 2026 Franja (Frank) Povazanj. Changed for open-cam: see NOTICE.md.",
+  "fileExtension": "txt",
+  "program": {
+    "header": [
+      "( {programName} )",
+      "G90 G94 G17 G40 G49 G80",
+      "{unitsCommand}",
+      "{wcsCommand}"
+    ],
+    "footer": [],
+    "commentPrefix": "(",
+    "commentSuffix": ")",
+    "lineNumbers": true,
+    "lineNumberIncrement": 10
+  },
+  "workCoordinates": {
+    "selectCommand": "G54"
+  },
+  "motion": {
+    "arcInterpolation": true
+  },
+  "feedSpeed": {
+    "rpmCommand": "S",
+    "spindleOnCW": "M3",
+    "spindleOff": "M5"
+  },
+  "toolChange": {
+    "commands": [
+      "M5",
+      "M6 T{toolNumber}",
+      "G43 H{toolNumber}"
+    ]
+  },
+  "stop": {
+    "programEndCommand": "M30"
+  },
+  "openCam": {
+    "spindle": "m3"
+  }
+}

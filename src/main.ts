@@ -28,6 +28,8 @@ import { rough3d, finish3d } from './core/mill3d';
 import { unionAll, simplify as simplifyLoops } from './core/geometry';
 import { type ToolChange } from './core/gcode';
 import { toGcode, checkBounds, describeTool, arcTestGcode, estimateMinutes, type Flavor } from './core/gcode';
+import { MACHINES, machineDef } from './core/machines';
+import { setupSheetHtml, type SheetFile } from './setupsheet';
 import { MATERIALS, resolveMaterial, materialWarnings } from './core/presets';
 import { toolWarnings } from './core/tool';
 import { translateToolpath, toolpathBounds } from './core/transform';
@@ -1217,25 +1219,34 @@ sel('material').addEventListener('input', () => { syncMaterialBoxes(); ops.forEa
 syncMaterialBoxes();
 ['flavor', 'bedx', 'bedy', 'zero'].forEach(id => $(id).addEventListener('input', refreshUi));
 
+// The controller list comes from the definition files in src/core/machines.
+sel('flavor').innerHTML = MACHINES.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+const def = () => machineDef(sel('flavor').value);
+function flavorInfo() {
+  const d = def();
+  $('flavorinfo').textContent = d.description;
+  $('rpmlbl').classList.toggle('hidden', sel('spindle').value !== 'm3');
+}
+sel('spindle').addEventListener('input', flavorInfo);
 // Arcs: GRBL always understands G2/G3, so it starts switched on; Marlin only if it was built with ARC_SUPPORT, so it starts off.
 function arcInfo() {
-  const grbl = sel('flavor').value === 'grbl';
+  const grbl = def().arcs;
   $('arcinfo').innerHTML = sel('arcs').value === 'off'
-    ? (grbl ? 'GRBL always understands arcs, so turning them on is safe.' : 'Switch on only after the arc test below runs correctly on your machine.')
-    : (grbl ? 'Arcs are on. GRBL supports G2/G3.' : '<b>Marlin only runs arcs if it was built with <code>ARC_SUPPORT</code>.</b> Run the arc test file first (spindle off). If it stops or draws straight lines, switch arcs back off.');
+    ? (grbl ? `${def().name} understands arcs, so turning them on is safe.` : 'Switch on only after the arc test below runs correctly on your machine.')
+    : (grbl ? `Arcs are on. ${def().name} supports G2/G3.` : '<b>Marlin only runs arcs if it was built with <code>ARC_SUPPORT</code>.</b> Run the arc test file first (spindle off). If it stops or draws straight lines, switch arcs back off.');
 }
-sel('flavor').addEventListener('input', () => { sel('arcs').value = sel('flavor').value === 'grbl' ? 'on' : 'off'; arcInfo(); });
+sel('flavor').addEventListener('input', () => { sel('arcs').value = def().arcs ? 'on' : 'off'; sel('spindle').value = def().spindle; flavorInfo(); arcInfo(); });
 sel('arcs').addEventListener('input', arcInfo);
 $('arctest').addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([arcTestGcode(sel('flavor').value as Flavor)], { type: 'text/plain' }));
-  a.download = 'arc_test_air_cut.gcode'; a.click();
+  a.download = `arc_test_air_cut.${def().extension}`; a.click();
 });
 // Machine defaults kept in this browser: firmware, arcs, work area and custom start/end G-code.
 const startBox = $('startgcode') as HTMLTextAreaElement, endBox = $('endgcode') as HTMLTextAreaElement;
 const store = (() => { try { return localStorage; } catch { return undefined; } })();
 function machineNow(): MachineProfile {
-  return { flavor: sel('flavor').value as Flavor, arcs: sel('arcs').value === 'on', bedX: +inp('bedx').value, bedY: +inp('bedy').value, startGcode: startBox.value, endGcode: endBox.value, toolChange: readToolChange() };
+  return { flavor: sel('flavor').value as Flavor, arcs: sel('arcs').value === 'on', spindle: sel('spindle').value as 'manual' | 'm3', rpm: +inp('rpm').value || 10000, bedX: +inp('bedx').value, bedY: +inp('bedy').value, startGcode: startBox.value, endGcode: endBox.value, toolChange: readToolChange() };
 }
 /** The "Bit changes" form as G-code writer options. */
 function readToolChange(): ToolChange {
@@ -1264,12 +1275,14 @@ function syncToolChange() {
   $('tcbox').classList.toggle('hidden', m === 'pause');
   $('tcprobe').classList.toggle('hidden', m !== 'probe');
   $('tcmacrolbl').classList.toggle('hidden', m !== 'custom');
-  $('tchomelbl').classList.toggle('hidden', sel('flavor').value !== 'marlin');
+  $('tchomelbl').classList.toggle('hidden', !def().home);
 }
 ['tcmode', 'flavor'].forEach(id => $(id).addEventListener('input', syncToolChange));
 {
   const m = loadMachine(store);
-  if (m.flavor) sel('flavor').value = m.flavor;
+  if (m.flavor) { sel('flavor').value = m.flavor; sel('spindle').value = def().spindle; }
+  if (m.spindle) sel('spindle').value = m.spindle;
+  if (m.rpm) inp('rpm').value = String(m.rpm);
   if (m.arcs !== undefined) sel('arcs').value = m.arcs ? 'on' : 'off';
   if (m.bedX) inp('bedx').value = String(m.bedX);
   if (m.bedY) inp('bedy').value = String(m.bedY);
@@ -1283,38 +1296,63 @@ $('savemachine').addEventListener('click', () => {
   $('machinemsg').textContent = saveMachine(store, machineNow()) ? 'Saved. New projects in this browser start with these.' : 'The browser would not store it (private window or storage full).';
 });
 $('forgetmachine').addEventListener('click', () => { forgetMachine(store); $('machinemsg').textContent = 'Forgotten. The built-in defaults apply next time.'; });
+flavorInfo();
 arcInfo();
 addEventListener('resize', draw);
 
 function download(paths: Toolpath[], name: string, note: string) {
   if (!paths.length) return;
-  const text = toGcode(paths, { flavor: sel('flavor').value as Flavor, spindle: 'manual', safeZ: 5, decimals: 3, arcs: sel('arcs').value === 'on', startGcode: startBox.value, endGcode: endBox.value, toolChange: readToolChange() })
-    .replace(/; Units: mm, absolute\. Work zero:.*\n/, '; Units: mm, absolute.\n') // the notes below say where zero is; avoid a conflicting generic line
-    .replace('\n', `\n${note.split('\n').map(l => '; ' + l).join('\n')}\n`);
+  const text = toGcode(paths, { flavor: sel('flavor').value as Flavor, spindle: sel('spindle').value as 'manual' | 'm3', spindleRpm: +inp('rpm').value || 10000, safeZ: 5, decimals: 3, arcs: sel('arcs').value === 'on', startGcode: startBox.value, endGcode: endBox.value, toolChange: readToolChange(), note, programName: name.replace(/\.[^.]+$/, '') });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-  a.download = name; a.click();
+  a.download = name.replace(/\.gcode$/, `.${def().extension}`); a.click();
 }
+/** The notes that go at the top of each file of a two-sided job (also printed on the setup sheet). */
+function side1Note(): string {
+  const t = ts();
+  const common = 'Stock centred on the turn-over line; zero X/Y at the stock bottom-left corner, Z zero on the top surface.';
+  return t.mode === 'spoilfirst'
+    ? `SIDE 1 (run step 0 first, with no stock): drills shallow blind dowel holes in the top of the stock, then cuts the front.\n${common}\nPut the stock roughly in place against your corner stops; its exact position does not matter for the flip.\nAfter side 1: lift the stock, push a dowel into each spoilboard hole, turn the stock over and lower it onto the dowels.`
+    : `SIDE 1: drills the dowel holes first, then cuts the front.\n${common}\nAfter drilling, press a dowel into each hole so it stands in the spoilboard and pokes up into the stock.\nFor side 2, lift the stock, turn it over and drop it back onto the same dowels.`;
+}
+const side0Note = () => 'STEP 0: NO STOCK ON THE MACHINE. Drills the dowel holes in the spoilboard only.\nZero X/Y at the stock bottom-left corner position (where the stock will sit). Z zero on the TOP SURFACE OF THE SPOILBOARD.\nDo this before side 1. Leave the dowels out until after side 1.';
+const side2Note = () => `SIDE 2: turn the stock over ${ts().flip === 'tb' ? 'top-to-bottom' : 'left-to-right'} onto the same dowels.\nSame X/Y zero as side 1; set Z zero on the NEW top surface.`;
+
 $('dl').addEventListener('click', () => {
   const p = placed();
+  if (ts().on && refsOk()) download(p.side1, 'side1.gcode', side1Note());
+  else download(p.paths, 'job.gcode', zeroText());
+});
+$('dl0').addEventListener('click', () => download(placed().side0, 'step0_spoilboard.gcode', side0Note()));
+$('dl2').addEventListener('click', () => download(placed().side2, 'side2.gcode', side2Note()));
+
+/** Every file the current job would download, in the order they are run. */
+function jobFiles(): SheetFile[] {
+  const p = placed();
+  if (p.split) return p.split.files.map(f => ({ name: f.name, note: f.note, paths: f.paths }));
   if (ts().on && refsOk()) {
-    const t = ts();
-    const common = 'Stock centred on the turn-over line; zero X/Y at the stock bottom-left corner, Z zero on the top surface.';
-    const note = t.mode === 'spoilfirst'
-      ? `SIDE 1 (run step 0 first, with no stock): drills shallow blind dowel holes in the top of the stock, then cuts the front.\n${common}\nPut the stock roughly in place against your corner stops; its exact position does not matter for the flip.\nAfter side 1: lift the stock, push a dowel into each spoilboard hole, turn the stock over and lower it onto the dowels.`
-      : `SIDE 1: drills the dowel holes first, then cuts the front.\n${common}\nAfter drilling, press a dowel into each hole so it stands in the spoilboard and pokes up into the stock.\nFor side 2, lift the stock, turn it over and drop it back onto the same dowels.`;
-    download(p.side1, 'side1.gcode', note);
-  } else download(p.paths, 'job.gcode', zeroText());
-});
-$('dl0').addEventListener('click', () => {
-  const p = placed();
-  download(p.side0, 'step0_spoilboard.gcode',
-    'STEP 0: NO STOCK ON THE MACHINE. Drills the dowel holes in the spoilboard only.\nZero X/Y at the stock bottom-left corner position (where the stock will sit). Z zero on the TOP SURFACE OF THE SPOILBOARD.\nDo this before side 1. Leave the dowels out until after side 1.');
-});
-$('dl2').addEventListener('click', () => {
-  const p = placed();
-  download(p.side2, 'side2.gcode',
-    `SIDE 2: turn the stock over ${ts().flip === 'tb' ? 'top-to-bottom' : 'left-to-right'} onto the same dowels.\nSame X/Y zero as side 1; set Z zero on the NEW top surface.`);
+    const f: SheetFile[] = [];
+    if (ts().mode === 'spoilfirst' && p.side0.length) f.push({ name: 'step0_spoilboard.gcode', note: side0Note(), paths: p.side0 });
+    if (p.side1.length) f.push({ name: 'side1.gcode', note: side1Note(), paths: p.side1 });
+    if (p.side2.length) f.push({ name: 'side2.gcode', note: side2Note(), paths: p.side2 });
+    return f;
+  }
+  return p.paths.length ? [{ name: 'job.gcode', note: zeroText(), paths: p.paths }] : [];
+}
+$('sheet').addEventListener('click', () => {
+  const files = jobFiles();
+  if (!files.length) { alert('Nothing to print yet: add an operation first.'); return; }
+  const d = def();
+  const html = setupSheetHtml({
+    title: (loadedFile?.name ?? 'open-cam job').replace(/\.[^.]+$/, ''),
+    date: new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
+    controller: d.name, spindle: sel('spindle').value as 'manual' | 'm3', rpm: +inp('rpm').value || 10000, arcs: sel('arcs').value === 'on',
+    bed: { x: +inp('bedx').value, y: +inp('bedy').value }, toolChange: readToolChange(),
+    warnings: [...$('warn').querySelectorAll('div')].map(el => el.textContent ?? '').filter(Boolean),
+    files: files.map(f => ({ ...f, name: f.name.replace(/\.gcode$/, `.${d.extension}`) })),
+  });
+  const w = window.open(URL.createObjectURL(new Blob([html], { type: 'text/html' })), '_blank');
+  if (!w) alert('The browser blocked the new window. Allow pop-ups for this site and try again.');
 });
 
 // ---------- help: hover hints, "?" buttons and the side drawer ----------

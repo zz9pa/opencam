@@ -15,7 +15,7 @@ const tp: Toolpath = {
 describe('machine defaults', () => {
   it('round-trips a profile', () => {
     const s = fake();
-    const p = { flavor: 'grbl' as const, arcs: true, bedX: 500, bedY: 400, startGcode: 'M3 S12000', endGcode: 'M5\nG0 X0 Y0' };
+    const p = { flavor: 'grbl' as const, arcs: true, spindle: 'm3' as const, rpm: 12000, bedX: 500, bedY: 400, startGcode: 'M3 S12000', endGcode: 'M5\nG0 X0 Y0' };
     expect(saveMachine(s, p)).toBe(true);
     expect(loadMachine(s)).toEqual(p);
   });
@@ -27,14 +27,16 @@ describe('machine defaults', () => {
     s.d.set(MACHINE_KEY, JSON.stringify({ flavor: 'x', bedX: -5, bedY: 300, startGcode: 4 }));
     expect(loadMachine(s)).toEqual({ bedY: 300 });
     expect(loadMachine(undefined)).toEqual({});
+    s.d.set(MACHINE_KEY, JSON.stringify({ flavor: 'linuxcnc', spindle: 'laser', rpm: 0 }));
+    expect(loadMachine(s)).toEqual({ flavor: 'linuxcnc' });
   });
   it('forgets, and survives a refusing store', () => {
     const s = fake();
-    saveMachine(s, { flavor: 'marlin', arcs: false, bedX: 600, bedY: 600, startGcode: '', endGcode: '' });
+    saveMachine(s, { flavor: 'marlin', arcs: false, spindle: 'manual', rpm: 10000, bedX: 600, bedY: 600, startGcode: '', endGcode: '' });
     forgetMachine(s);
     expect(loadMachine(s)).toEqual({});
     const bad: KV = { getItem: () => null, setItem: () => { throw new Error('full'); }, removeItem: () => { throw new Error('x'); } };
-    expect(saveMachine(bad, { flavor: 'marlin', arcs: false, bedX: 600, bedY: 600, startGcode: '', endGcode: '' })).toBe(false);
+    expect(saveMachine(bad, { flavor: 'marlin', arcs: false, spindle: 'manual', rpm: 10000, bedX: 600, bedY: 600, startGcode: '', endGcode: '' })).toBe(false);
     expect(() => forgetMachine(bad)).not.toThrow();
   });
 });

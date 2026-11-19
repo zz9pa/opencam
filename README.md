@@ -13,7 +13,7 @@ npx vitest run     # tests
 npx vite build     # production build
 ```
 
-Features: profile / pocket / on-the-line / drill operations with climb or conventional direction, ramped entry, holding tabs, flat/ball/V bits, Marlin and GRBL output, work-area checks, two-sided jobs with keyed dowel registration, thick-stock dowel strategy, splitting parts longer than the machine into registered segments, V-carving, V-inlay and flat-bottom inlay, lead-in/out (cut-outs and pockets), rest machining of pockets, custom start/end G-code, helical arcs, DXF (ASCII, binary, hatches), dogbone corners, 3D surfacing from an STL (roughing and finishing), a 3D material-removal simulation, and undo / saved projects.
+Features: profile / pocket / on-the-line / drill operations with climb or conventional direction, ramped entry, holding tabs, flat/ball/V bits, Marlin and GRBL output, work-area checks, two-sided jobs with keyed dowel registration, thick-stock dowel strategy, splitting parts longer than the machine into registered segments, V-carving, V-inlay and flat-bottom inlay, lead-in/out (cut-outs and pockets), rest machining of pockets, custom start/end G-code, a printable setup sheet, controller definitions as data files (Marlin, GRBL, grblHAL, LinuxCNC, Mach3, UCCNC, generic), helical arcs, DXF (ASCII, binary, hatches), dogbone corners, 3D surfacing from an STL (roughing and finishing), a 3D material-removal simulation, and undo / saved projects.
 
 ## Licence
 

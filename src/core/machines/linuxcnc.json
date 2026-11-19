@@ -1,0 +1,44 @@
+{
+  "id": "linuxcnc",
+  "name": "LinuxCNC",
+  "description": "LinuxCNC: the open-source machine controller.",
+  "source": "Adapted from PureCutCNC (https://github.com/PureCutCNC/purecutcnc), Apache-2.0, Copyright 2026 Franja (Frank) Povazanj. Changed for open-cam: see NOTICE.md.",
+  "fileExtension": "ngc",
+  "program": {
+    "header": [
+      "( {programName} )",
+      "G90 G17 G40 G49 G80 G94",
+      "{unitsCommand}",
+      "{wcsCommand}"
+    ],
+    "footer": [],
+    "commentPrefix": "(",
+    "commentSuffix": ")",
+    "lineNumbers": false,
+    "lineNumberIncrement": 10
+  },
+  "workCoordinates": {
+    "selectCommand": "G54"
+  },
+  "motion": {
+    "arcInterpolation": true
+  },
+  "feedSpeed": {
+    "rpmCommand": "S",
+    "spindleOnCW": "M3",
+    "spindleOff": "M5"
+  },
+  "toolChange": {
+    "commands": [
+      "M5",
+      "M6 T{toolNumber}",
+      "G43 H{toolNumber}"
+    ]
+  },
+  "stop": {
+    "programEndCommand": "M2"
+  },
+  "openCam": {
+    "spindle": "m3"
+  }
+}

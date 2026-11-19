@@ -1,0 +1,20 @@
+{
+  "id": "marlin",
+  "name": "Marlin (MPCNC default)",
+  "description": "Marlin firmware (MPCNC and other 3D-printer style boards). The router is switched on by hand.",
+  "fileExtension": "gcode",
+  "motion": {
+    "arcInterpolation": false
+  },
+  "feedSpeed": {
+    "rpmCommand": "S",
+    "spindleOnCW": "M3",
+    "spindleOff": "M5"
+  },
+  "openCam": {
+    "spindle": "manual",
+    "rapidWithFeed": true,
+    "display": "M117",
+    "home": "G28 X Y"
+  }
+}

@@ -98,7 +98,8 @@ Selected lines are orange.
 
 ### 2. Machine and material
 
-- **Controller firmware**: *Marlin* or *GRBL*. This changes how the file pauses and ends. If you are not sure, Marlin is common on gantry-style hobby machines and GRBL on many small desktop machines.
+- **Controller firmware**: which controller will run the file. *Marlin* and *GRBL* come first; *grblHAL*, *LinuxCNC*, *Mach3*, *UCCNC* and *Generic G-code* are also there. The choice changes how the file starts and ends, how comments are written (brackets for LinuxCNC, Mach3 and the like), whether lines are numbered (Mach3, UCCNC), how a bit change is written (those controllers get a tool number, `M6` and a length offset) and the file extension. If you are not sure, Marlin is common on gantry-style hobby machines and GRBL on many small desktop machines.
+- **Router / spindle**: *I switch it on by hand* makes the file pause so you can switch the router on (the right choice for a hand-held router in a mount). *The controller switches it on* writes `M3 S<rpm>` at the start and `M5` at the end; set the speed below it.
 - **Work area X / Y**: how far your machine can travel. open-cam warns if the job does not fit.
 - **Bit changes** (open the section of that name): what the program does when a job uses more than one bit. A change on a router machine is a chore (take the router out, change the bit, refit it, find Z zero again), so you can choose:
   - *Just pause where it is*: the plain version. The bit stops, you change it and set Z zero yourself.
@@ -130,6 +131,8 @@ The operation appears in the list and its path appears in the preview (blue). Cl
 ### 4. Check, then download
 
 Read any warnings (red text under the operations). Under them, open-cam shows an **estimated run time** (a guide only: real jobs run a little longer because of acceleration). When you are happy, click **Download G-code**.
+
+**Print setup sheet** opens a page made for the machine: the bits in the order they are used, each operation with its feed rates and depth, how long each file should take, a checklist of what to do before pressing start (where zero is, how Z is found, when the router starts), any warnings, and a top view of the cuts. Use *Print or save as PDF* on that page. A job with several files (two sides, or a long part split in pieces) gets one section for each file.
 
 ## Undo, redo and saving your work
 

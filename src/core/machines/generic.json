@@ -1,0 +1,44 @@
+{
+  "id": "generic",
+  "name": "Generic G-code",
+  "description": "Plain RS-274 G-code for a basic controller. Bit changes pause with M0.",
+  "source": "Adapted from PureCutCNC (https://github.com/PureCutCNC/purecutcnc), Apache-2.0, Copyright 2026 Franja (Frank) Povazanj. Changed for open-cam: see NOTICE.md.",
+  "fileExtension": "nc",
+  "program": {
+    "header": [
+      "( {programName} )",
+      "G90",
+      "G17",
+      "{unitsCommand}",
+      "{wcsCommand}"
+    ],
+    "footer": [],
+    "commentPrefix": "(",
+    "commentSuffix": ")",
+    "lineNumbers": false,
+    "lineNumberIncrement": 10
+  },
+  "workCoordinates": {
+    "selectCommand": "G54"
+  },
+  "motion": {
+    "arcInterpolation": true
+  },
+  "feedSpeed": {
+    "rpmCommand": "S",
+    "spindleOnCW": "M3",
+    "spindleOff": "M5"
+  },
+  "toolChange": {
+    "commands": [
+      "M5",
+      "M0 ( Tool change: {toolName} )"
+    ]
+  },
+  "stop": {
+    "programEndCommand": "M30"
+  },
+  "openCam": {
+    "spindle": "m3"
+  }
+}
